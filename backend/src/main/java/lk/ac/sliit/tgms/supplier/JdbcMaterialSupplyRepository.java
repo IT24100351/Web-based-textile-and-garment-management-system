@@ -46,6 +46,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Creates a new material supply record in the database.
+     */
     @Override
     public long create(
             long supplierId,
@@ -83,6 +86,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 keyHolder);
         return generatedId(keyHolder);
     }
+    /**
+     * Retrieves a material supply by its ID.
+     */
 
     @Override
     public Optional<MaterialSupply> findById(long supplyId) {
@@ -100,6 +106,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 .stream()
                 .findFirst();
     }
+    /**
+     * Updates the details of an existing material supply.
+     */
 
     @Override
     public int updateDetails(
@@ -123,6 +132,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 supplyId,
                 supplierId);
     }
+    /**
+     * Marks a material supply as discontinued instead of deleting it.
+     */
 
     @Override
     public int archive(long supplyId, long supplierId) {
@@ -135,6 +147,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 supplyId,
                 supplierId);
     }
+    /**
+     * Retrieves material supplies with optional filtering and search criteria.
+     */
 
     @Override
     public List<MaterialSupplyListItem> findAll(MaterialSupplyQuery filter) {
