@@ -15,7 +15,8 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class JdbcInventoryMaterialRepository implements InventoryMaterialRepository {
+public class JdbcInventoryMaterialRepository implements InventoryMaterialRepository 
+{
 
     private static final RowMapper<InventoryMaterial> MATERIAL_MAPPER =
             (resultSet, rowNumber) -> mapMaterial(resultSet);
@@ -104,7 +105,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     }
 
     @Override
-    public List<InventoryMaterial> findAll(InventoryMaterialQuery filter) {
+    public List<InventoryMaterial> findAll(InventoryMaterialQuery filter) 
+    {
         StringBuilder query = new StringBuilder("""
                 SELECT id, source_material_supply_id, material_code, material_name,
                        material_description, material_type, unit_of_measure,
@@ -140,7 +142,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
         return jdbcTemplate.query(query.toString(), MATERIAL_MAPPER, parameters.toArray());
     }
 
-    private String escapeLike(String value) {
+    private String escapeLike(String value) 
+    {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
@@ -179,7 +182,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     }
 
     @Override
-    public int archive(long materialId) {
+    public int archive(long materialId) 
+    {
         return jdbcTemplate.update(
                 """
                 UPDATE inventory_materials
@@ -192,7 +196,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     }
 
     @Override
-    public int consumeStockIfAvailable(long materialId, BigDecimal quantity) {
+    public int consumeStockIfAvailable(long materialId, BigDecimal quantity) 
+    {
         return jdbcTemplate.update(
                 """
                 UPDATE inventory_materials
