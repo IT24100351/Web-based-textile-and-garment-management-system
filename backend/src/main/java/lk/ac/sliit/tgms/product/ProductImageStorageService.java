@@ -16,19 +16,16 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class ProductImageStorageService {
 
-    // Keep product photos small enough for predictable upload, storage, and response handling.
     static final long MAX_IMAGE_BYTES = 5L * 1024L * 1024L;
     private final Path storageDirectory;
 
     public ProductImageStorageService(
             @Value("${tgms.products.image-storage-directory:./data/product-images}")
                     String storageDirectory) {
-        // Normalize the configured directory once so later path checks compare canonical shapes.
         this.storageDirectory = Path.of(storageDirectory).toAbsolutePath().normalize();
     }
 
     public StoredProductImage store(MultipartFile imageFile) {
-        // Reject missing, empty, or oversized uploads before reading the entire file into memory.
         if (imageFile == null || imageFile.isEmpty()) {
             throw invalidImage("Choose a product photo to upload.");
         }
@@ -43,13 +40,11 @@ public class ProductImageStorageService {
             throw new IllegalStateException("The product photo could not be read.", exception);
         }
 
-        // Trust the image signature instead of the client supplied content type or filename.
         ImageType imageType = detectImageType(bytes)
                 .orElseThrow(() -> invalidImage(
                         "Use a valid JPEG, PNG, or WebP product photo."));
         String fileName = UUID.randomUUID() + imageType.extension();
         Path destination = storageDirectory.resolve(fileName).normalize();
-        // Ensure the resolved destination still lives inside the configured image directory.
         if (!destination.getParent().equals(storageDirectory)) {
             throw new IllegalStateException("The product photo destination is invalid.");
         }
@@ -67,13 +62,11 @@ public class ProductImageStorageService {
     }
 
     public Optional<StoredImageResource> find(String fileName) {
-        // Only serve generated image names, preventing arbitrary file lookups by path input.
         if (fileName == null
                 || !fileName.matches("[0-9a-fA-F-]{36}\\.(jpg|png|webp)")) {
             return Optional.empty();
         }
         Path candidate = storageDirectory.resolve(fileName).normalize();
-        // Refuse paths outside the storage directory and entries that are not regular files.
         if (!candidate.getParent().equals(storageDirectory) || !Files.isRegularFile(candidate)) {
             return Optional.empty();
         }
@@ -91,14 +84,12 @@ public class ProductImageStorageService {
     }
 
     private Optional<ImageType> detectImageType(byte[] bytes) {
-        // JPEG files start with the SOI marker followed by a marker prefix.
         if (bytes.length >= 3
                 && (bytes[0] & 0xff) == 0xff
                 && (bytes[1] & 0xff) == 0xd8
                 && (bytes[2] & 0xff) == 0xff) {
             return Optional.of(ImageType.JPEG);
         }
-        // PNG files have a fixed eight-byte signature at the start of the file.
         if (bytes.length >= 8
                 && (bytes[0] & 0xff) == 0x89
                 && bytes[1] == 0x50
@@ -110,7 +101,6 @@ public class ProductImageStorageService {
                 && bytes[7] == 0x0a) {
             return Optional.of(ImageType.PNG);
         }
-        // WebP files are stored in a RIFF container and identify themselves at bytes 8-11.
         if (bytes.length >= 12
                 && bytes[0] == 'R'
                 && bytes[1] == 'I'
@@ -126,7 +116,6 @@ public class ProductImageStorageService {
     }
 
     private String mediaTypeForFileName(String fileName) {
-        // The filename was already validated, so the extension is enough to restore the media type.
         if (fileName.endsWith(".png")) {
             return "image/png";
         }
@@ -137,7 +126,6 @@ public class ProductImageStorageService {
     }
 
     private ProductValidationException invalidImage(String message) {
-        // Match product validation errors to the form field that receives the uploaded file.
         return new ProductValidationException(Map.of("imageFile", message));
     }
 

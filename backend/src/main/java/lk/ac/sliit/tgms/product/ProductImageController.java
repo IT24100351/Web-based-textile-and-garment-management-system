@@ -16,25 +16,12 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 public class ProductImageController {
 
-    /** Service responsible for persisting and retrieving product image files. */
     private final ProductImageStorageService imageStorageService;
 
-    /**
-     * Creates the controller with its image storage dependency.
-     *
-     * @param imageStorageService service used to store and load product images
-     */
     public ProductImageController(ProductImageStorageService imageStorageService) {
         this.imageStorageService = imageStorageService;
     }
 
-    /**
-     * Uploads a product image and returns metadata for the stored file.
-     * Only sales officers may upload product images.
-     *
-     * @param imageFile image supplied as a multipart form-data request part
-     * @return confirmation message and details required to access the uploaded image
-     */
     @PostMapping(
             path = "/api/products/images",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -48,14 +35,6 @@ public class ProductImageController {
                 stored.size());
     }
 
-    /**
-     * Serves a previously uploaded product image by file name.
-     * Successful responses are publicly cacheable for one year; an unknown file
-     * name produces a {@code 404 Not Found} response.
-     *
-     * @param fileName stored image file name, including its extension
-     * @return the image resource with its media type and file size, or {@code 404}
-     */
     @GetMapping("/api/product-images/{fileName:.+}")
     public ResponseEntity<Resource> read(@PathVariable String fileName) {
         return imageStorageService.find(fileName)
@@ -67,14 +46,6 @@ public class ProductImageController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /**
-     * Response returned after a product image has been stored successfully.
-     *
-     * @param message human-readable upload result
-     * @param imageUrl URL from which the image can be retrieved
-     * @param mediaType MIME type of the stored image
-     * @param size size of the stored file in bytes
-     */
     public record UploadProductImageResponse(
             String message,
             String imageUrl,
