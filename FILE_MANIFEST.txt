@@ -74,7 +74,7 @@ backend/src/main/java/lk/ac/sliit/tgms/product/ProductValidationException.java
 backend/src/main/java/lk/ac/sliit/tgms/product/ProductVariant.java
 backend/src/main/java/lk/ac/sliit/tgms/product/VariantStatus.java
 backend/src/main/java/lk/ac/sliit/tgms/supplier/JdbcMaterialSupplyRepository.java
-backend/src/main/java/lk/ac/sliit/tgms/supplier/JdbcSupplierProfileRepository.java
+backend/src/main/java/lk/ac/sliit/tgms/supplier/lk.ac.sliit.tgms.supplier.JdbcSupplierProfileRepository.java
 backend/src/main/java/lk/ac/sliit/tgms/supplier/MaterialSupply.java
 backend/src/main/java/lk/ac/sliit/tgms/supplier/MaterialSupplyArchivedException.java
 backend/src/main/java/lk/ac/sliit/tgms/supplier/MaterialSupplyCodeExistsException.java

@@ -154,14 +154,14 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             query.append(" AND ms.supplier_id = ?");
             parameters.add(filter.supplierId());
         }
-        if (filter.search() != null) {
+        if (filter.search() != null && !filter.search().isBlank()) {
             query.append("""
-                     AND (LOWER(ms.material_code) LIKE ?
-                          OR LOWER(ms.material_name) LIKE ?
-                          OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
-                          OR LOWER(ms.unit_of_measure) LIKE ?
-                          OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
-                    """);
+         AND (LOWER(ms.material_code) LIKE ?
+              OR LOWER(ms.material_name) LIKE ?
+              OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
+              OR LOWER(ms.unit_of_measure) LIKE ?
+              OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
+        """);
             String searchPattern = "%" + escapeLike(filter.search().toLowerCase()) + "%";
             for (int index = 0; index < 5; index++) {
                 parameters.add(searchPattern);
