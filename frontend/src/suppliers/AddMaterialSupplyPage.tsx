@@ -34,7 +34,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 }
 
 function optionalValue(value: string | null) {
-  return value ?? "Not provided";
+  return value?.trim() || "Not provided";
 }
 
 export function AddMaterialSupplyPage() {
