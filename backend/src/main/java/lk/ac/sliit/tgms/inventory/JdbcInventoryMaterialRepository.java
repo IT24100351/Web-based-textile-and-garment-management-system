@@ -212,7 +212,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                 quantity);
     }
 
-    private static InventoryMaterial mapMaterial(ResultSet resultSet) throws SQLException {
+    private static InventoryMaterial mapMaterial(ResultSet resultSet) throws SQLException 
+    {
         Long sourceMaterialSupplyId = resultSet.getLong("source_material_supply_id");
         if (resultSet.wasNull()) {
             sourceMaterialSupplyId = null;
@@ -232,7 +233,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                 resultSet.getTimestamp("updated_at").toInstant());
     }
 
-    private long generatedId(KeyHolder keyHolder) {
+    private long generatedId(KeyHolder keyHolder) 
+    {
         Map<String, Object> keys = keyHolder.getKeys();
         if (keys != null) {
             return keys.entrySet().stream()
