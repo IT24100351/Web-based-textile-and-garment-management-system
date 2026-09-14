@@ -29,6 +29,9 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Retrieves the supplier profile associated with a user ID.
+     */
     @Override
     public Optional<SupplierProfile> findByUserId(long userId) {
         return jdbcTemplate.query(
@@ -43,6 +46,9 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 .stream()
                 .findFirst();
     }
+    /**
+     * Creates a new supplier profile in the database.
+     */
 
     @Override
     public long create(long userId, String businessName, String contactPhone, String address) {
@@ -65,6 +71,9 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 keyHolder);
         return generatedId(keyHolder);
     }
+    /**
+     * Updates the supplier profile details for a user.
+     */
 
     @Override
     public int update(long userId, String businessName, String contactPhone, String address) {
@@ -80,6 +89,7 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 address,
                 userId);
     }
+
 
     private long generatedId(KeyHolder keyHolder) {
         Map<String, Object> keys = keyHolder.getKeys();
