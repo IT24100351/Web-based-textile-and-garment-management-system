@@ -61,13 +61,15 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                     statement.setBigDecimal(7, currentQuantity);
                     statement.setBigDecimal(8, lowStockThreshold);
                     return statement;
+                    
                 },
                 keyHolder);
         return generatedId(keyHolder);
     }
 
     @Override
-    public Optional<InventoryMaterial> findById(long materialId) {
+    public Optional<InventoryMaterial> findById(long materialId) 
+    {
         return jdbcTemplate.query(
                         """
                         SELECT id, source_material_supply_id, material_code, material_name,
@@ -84,7 +86,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     }
 
     @Override
-    public Optional<InventoryMaterial> findByMaterialCode(String materialCode) {
+    public Optional<InventoryMaterial> findByMaterialCode(String materialCode)
+     {
         return jdbcTemplate.query(
                         """
                         SELECT id, source_material_supply_id, material_code, material_name,
