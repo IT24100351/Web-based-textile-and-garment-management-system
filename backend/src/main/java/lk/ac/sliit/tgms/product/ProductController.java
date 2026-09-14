@@ -54,8 +54,7 @@ public class ProductController {
                     request.variants().stream()
                             .map(variant -> variant == null
                                     ? null
-                                    : new CreateProductVariantCommand( //create product
-
+                                    : new CreateProductVariantCommand(
                                             variant.size(),
                                             variant.color(),
                                             variant.price(),

@@ -1,31 +1,47 @@
-# Garment Product Management — Extracted Module Only
+# TGMS — Garment Product + Order + Fabric Inventory Management Only
 
-This ZIP contains only the Garment Product Management implementation extracted from the Web Based Textile & Garment Management System project.
+This archive was extracted from the supplied **Web-Based Textile & Garment Management System (TGMS)** project and contains implementation artifacts for these three major functions only:
 
-## Assigned member
-- Gunathilaka N.T.D.S
-- Registration No: IT25102427
-- Major Function: Garment Product Management
+1. **Garment Product Management** — assigned to **Gunathilaka N.T.D.S (IT25102427)**
+2. **Order Management** — assigned to **Nimsara V.G.P (IT25101310)**
+3. **Fabric Inventory Management** — assigned to **Basnagoda B.L.K (IT25102148)**
 
-## Functional scope included
-- Garment product catalog browsing and product detail display
-- Product creation
-- Product update/editing
-- Product category, size, color and price handling
-- Product variants and availability/status handling
-- Product image handling
-- Product persistence/repository/service/controller code
-- Product-specific database migrations
-- Product-specific backend tests
-- Demo product images used by the product catalog
+## Included scope
 
-## Main folders
-- `frontend/src/products/` — product pages/components/forms/types
-- `frontend/src/api/products.ts` — product API client
-- `frontend/public/products/` — product catalog assets
-- `backend/src/main/java/lk/ac/sliit/tgms/product/` — product backend module
-- `backend/src/test/java/lk/ac/sliit/tgms/product/` — product backend tests
-- `database/migrations/changes/` — product catalog/image migrations
+### Garment Product Management
+- Product catalog and product details UI
+- Add/edit garment product UI
+- Product form/types/image handling
+- Product frontend API client
+- Product backend controller/service/repository/domain models
+- Product image storage code and sample/demo product images
+- Product tests
+- Product catalog and image database migrations
+
+### Order Management
+- Create-order UI
+- Customer place-order UI
+- Customer order tracking UI
+- Order read/details pages
+- Order receipt PDF helper
+- Order frontend API client
+- Order backend controller/service/repository/domain models
+- Order validation, lifecycle, billing, invoice/payment records
+- Order tests
+- Customer-order, order-item, status-history, and billing migrations
+
+### Fabric Inventory Management
+- Inventory material listing/search/filter UI
+- Add inventory material UI
+- Edit/update inventory material UI
+- Inventory material form logic
+- Inventory frontend API client
+- Inventory backend controller/service/repository/domain models
+- Stock status, availability, validation and insufficient-stock logic
+- Inventory schema/API integration tests
+- Inventory materials database migration
 
 ## Important
-This is a **module-only extraction**, not a standalone copy of the complete TGMS application. Shared project infrastructure (authentication, authorization, common UI components, routing, API client setup, Spring Boot configuration, Maven/Vite configuration, and the master Liquibase changelog) is intentionally not duplicated here because the request was to include only the Garment Product Management part.
+This is a **module-only extraction**, not a standalone copy of the entire TGMS application. Shared application infrastructure such as authentication, authorization, global routing/layout, notification services, and other common configuration remains in the full project and may be required to run these modules independently.
+
+The Supplier Management, Production Management, and Delivery Management major modules are intentionally excluded.

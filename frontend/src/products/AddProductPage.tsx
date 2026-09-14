@@ -14,9 +14,7 @@ import type { GarmentProductDetails } from "./productTypes";
 
 const inputClassName =
   "mt-2 w-full rounded-xl border border-border bg-background px-4 py-3 text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 aria-invalid:border-danger-border";
-// Match the backend money format while keeping the input as text for precise validation feedback.
 const pricePattern = /^\d{1,10}(\.\d{1,2})?$/;
-// Allow only application-managed product asset paths and block directory traversal attempts.
 const localProductImagePattern = /^\/products\/(?!.*\.\.)[A-Za-z0-9/_\-.]+$/;
 const acceptedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maximumImageBytes = 5 * 1024 * 1024;
@@ -44,7 +42,6 @@ function normalizeText(value: string) {
 }
 
 function normalizeForm(form: CreateProductInput, imageUrl?: string): CreateProductInput {
-  // Prepare the payload exactly as the API expects: trimmed text, optional empty fields omitted.
   const description = form.description?.trim();
   const normalizedImageUrl = imageUrl?.trim() || form.imageUrl?.trim();
   return {
@@ -62,7 +59,6 @@ function normalizeForm(form: CreateProductInput, imageUrl?: string): CreateProdu
 }
 
 function validateForm(form: CreateProductInput): FormErrors {
-  // Run client-side checks before contacting the API so users get immediate field-level feedback.
   const errors: FormErrors = {};
   const name = form.name.trim();
   const category = form.category.trim();
@@ -91,7 +87,6 @@ function validateForm(form: CreateProductInput): FormErrors {
   if (form.variants.length === 0) errors.variants = "Add at least one size and colour option.";
   else if (form.variants.length > 100) errors.variants = "A product can contain at most 100 variants.";
 
-  // Track size and colour pairs to prevent duplicate sellable variants in the same product.
   const combinations = new Set<string>();
   form.variants.forEach((variant, index) => {
     const size = normalizeText(variant.size);
@@ -113,7 +108,6 @@ function validateForm(form: CreateProductInput): FormErrors {
 }
 
 function apiErrorsToFormErrors(fields: Record<string, string>): FormErrors {
-  // Convert backend variant field names into the dotted keys used by this form state.
   const errors: FormErrors = {};
   Object.entries(fields).forEach(([field, message]) => {
     const variantMatch = field.match(/^variants\[(\d+)]\.(size|color|price|availability)$/);
@@ -137,7 +131,6 @@ export function AddProductPage() {
   const [submissionStage, setSubmissionStage] = useState<"uploading" | "saving" | null>(null);
 
   useEffect(() => () => {
-    // Release the browser-created preview URL whenever the chosen image changes or the page unmounts.
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
   }, [imagePreviewUrl]);
 
@@ -177,14 +170,12 @@ export function AddProductPage() {
       ...current,
       variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
     }));
-    // Re-indexing variants can make existing row errors point at the wrong input, so clear them.
     setFieldErrors((current) => Object.fromEntries(
       Object.entries(current).filter(([field]) => !field.startsWith("variants.")),
     ));
   }
 
   function chooseImage(file: File | undefined) {
-    // Validate the selected file before creating a local preview or uploading it later.
     clearError("imageFile");
     if (!file) return;
     if (!acceptedImageTypes.has(file.type)) {
@@ -197,7 +188,6 @@ export function AddProductPage() {
     }
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
     setImageFile(file);
-    // Object URLs keep the preview instant without reading the image into React state.
     setImagePreviewUrl(URL.createObjectURL(file));
   }
 
@@ -211,7 +201,6 @@ export function AddProductPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmissionError(null);
-    // Stop early when local validation fails; server errors are merged back after API calls.
     const errors = validateForm(form);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -223,7 +212,6 @@ export function AddProductPage() {
         setSubmissionStage("uploading");
         storedImageUrl = (await uploadProductImage(imageFile)).imageUrl;
       }
-      // Save the product only after the optional image upload returns a managed image URL.
       setSubmissionStage("saving");
       const result = await createProduct(normalizeForm(form, storedImageUrl));
       setSavedProduct(result.product);
