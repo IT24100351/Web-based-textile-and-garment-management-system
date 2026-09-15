@@ -2,6 +2,8 @@ package lk.ac.sliit.tgms.order;
 
 import java.util.Map;
 
+public class OrderBillingValidationException extends RuntimeException {
+    private final Map<String, String> fields;
 
 
     public OrderBillingValidationException(Map<String, String> fields) {
