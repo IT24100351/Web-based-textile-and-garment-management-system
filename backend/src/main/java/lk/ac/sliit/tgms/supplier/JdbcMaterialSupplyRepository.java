@@ -15,8 +15,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
 
-    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER = (resultSet, rowNumber) ->
-            mapSupply(resultSet);
+    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER =
+            (resultSet, rowNumber) -> mapSupply(resultSet);
 
     private static final RowMapper<MaterialSupplyListItem> LIST_ITEM_MAPPER =
             (resultSet, rowNumber) -> new MaterialSupplyListItem(
@@ -60,6 +60,10 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             BigDecimal unitPrice,
             int deliveryLeadTimeDays,
             String deliveryNotes) {
+
+        if (deliveryLeadTimeDays < 0) {
+            throw new IllegalArgumentException("Delivery lead time cannot be negative.");
+        }
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(
                 connection -> {
