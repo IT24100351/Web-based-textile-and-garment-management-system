@@ -15,8 +15,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
 
-    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER = (resultSet, rowNumber) ->
-            mapSupply(resultSet);
+    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER =
+            (resultSet, rowNumber) -> mapSupply(resultSet);
 
     private static final RowMapper<MaterialSupplyListItem> LIST_ITEM_MAPPER =
             (resultSet, rowNumber) -> new MaterialSupplyListItem(
@@ -46,6 +46,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Creates a new material supply record in the database.
+     */
     @Override
     public long create(
             long supplierId,
@@ -57,6 +60,10 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             BigDecimal unitPrice,
             int deliveryLeadTimeDays,
             String deliveryNotes) {
+
+        if (deliveryLeadTimeDays < 0) {
+            throw new IllegalArgumentException("Delivery lead time cannot be negative.");
+        }
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(
                 connection -> {
@@ -83,6 +90,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 keyHolder);
         return generatedId(keyHolder);
     }
+    /**
+     * Retrieves a material supply by its ID.
+     */
 
     @Override
     public Optional<MaterialSupply> findById(long supplyId) {
@@ -100,6 +110,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 .stream()
                 .findFirst();
     }
+    /**
+     * Updates the details of an existing material supply.
+     */
 
     @Override
     public int updateDetails(
@@ -123,6 +136,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 supplyId,
                 supplierId);
     }
+    /**
+     * Marks a material supply as discontinued instead of deleting it.
+     */
 
     @Override
     public int archive(long supplyId, long supplierId) {
@@ -135,6 +151,9 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 supplyId,
                 supplierId);
     }
+    /**
+     * Retrieves material supplies with optional filtering and search criteria.
+     */
 
     @Override
     public List<MaterialSupplyListItem> findAll(MaterialSupplyQuery filter) {
@@ -154,14 +173,14 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             query.append(" AND ms.supplier_id = ?");
             parameters.add(filter.supplierId());
         }
-        if (filter.search() != null) {
+        if (filter.search() != null && !filter.search().isBlank()) {
             query.append("""
-                     AND (LOWER(ms.material_code) LIKE ?
-                          OR LOWER(ms.material_name) LIKE ?
-                          OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
-                          OR LOWER(ms.unit_of_measure) LIKE ?
-                          OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
-                    """);
+         AND (LOWER(ms.material_code) LIKE ?
+              OR LOWER(ms.material_name) LIKE ?
+              OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
+              OR LOWER(ms.unit_of_measure) LIKE ?
+              OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
+        """);
             String searchPattern = "%" + escapeLike(filter.search().toLowerCase()) + "%";
             for (int index = 0; index < 5; index++) {
                 parameters.add(searchPattern);

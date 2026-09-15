@@ -34,7 +34,6 @@ const emptyFilterForm: CatalogFilterForm = {
 const filterInputClassName =
   "mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
 
-// Convert the form state into API filters, skipping blank fields so the backend receives only active criteria.
 function buildCatalogFilters(form: CatalogFilterForm): ProductCatalogFilters {
   const filters: ProductCatalogFilters = {};
   const search = form.search.trim();
@@ -50,12 +49,10 @@ function buildCatalogFilters(form: CatalogFilterForm): ProductCatalogFilters {
   return filters;
 }
 
-// A single helper keeps empty-state wording and actions tied to the applied server-side filters.
 function hasCatalogFilters(filters: ProductCatalogFilters) {
   return Object.keys(filters).length > 0;
 }
 
-// Presents one catalog product with its orderable variants and customer checkout action.
 function ProductCard({
   canAddToCart,
   product,
@@ -63,19 +60,15 @@ function ProductCard({
   canAddToCart: boolean;
   product: GarmentProductDetails;
 }) {
-  // Only available variants can be selected for cart checkout from the public catalog.
   const availableVariants = product.variants.filter((variant) => variant.status === "AVAILABLE");
   const [selectedVariantId, setSelectedVariantId] = useState(
     availableVariants[0] ? String(availableVariants[0].id) : "",
   );
-  // Fall back to the first available variant if the current selection becomes unavailable after reload.
   const selectedVariant = availableVariants.find(
     (variant) => String(variant.id) === selectedVariantId,
   ) ?? availableVariants[0];
-  // Build compact display groups so repeated variants do not duplicate size and colour chips.
   const sizes = [...new Set(availableVariants.map((variant) => variant.size))];
   const colors = [...new Set(availableVariants.map((variant) => variant.color))];
-  // Sorting copies the variants first, keeping the product data immutable while calculating the price range.
   const sortedByPrice = [...availableVariants].sort(
     (first, second) => Number(first.price) - Number(second.price),
   );
@@ -169,7 +162,6 @@ export function ProductCatalogPage() {
   const [requestVersion, setRequestVersion] = useState(0);
 
   useEffect(() => {
-    // Fetch products for the current applied filters and abort stale requests on filter changes or unmount.
     const controller = new AbortController();
 
     void getCatalogProducts(appliedFilters, controller.signal)
@@ -199,20 +191,17 @@ export function ProductCatalogPage() {
     field: Field,
     value: CatalogFilterForm[Field],
   ) {
-    // Preserve the rest of the form while updating one typed filter field.
     setFilterForm((current) => ({ ...current, [field]: value }));
   }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Applying filters promotes draft form values into the server request state.
     setIsLoading(true);
     setErrorMessage(null);
     setAppliedFilters(buildCatalogFilters(filterForm));
   }
 
   function clearFilters() {
-    // Reset both the visible form and the applied API filters back to the default catalog view.
     setFilterForm(emptyFilterForm);
     setIsLoading(true);
     setErrorMessage(null);
@@ -220,7 +209,6 @@ export function ProductCatalogPage() {
   }
 
   function retryCatalog() {
-    // Bump a request-only version so the effect retries without changing the selected filters.
     setIsLoading(true);
     setErrorMessage(null);
     setRequestVersion((current) => current + 1);

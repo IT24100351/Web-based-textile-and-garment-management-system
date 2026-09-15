@@ -47,14 +47,12 @@ function ProductDetailContent({ productId }: { productId: number }) {
   const [selectedVariantId, setSelectedVariantId] = useState("");
 
   useEffect(() => {
-    // Load the catalog-safe product details for the current route and cancel stale requests.
     const controller = new AbortController();
 
     void getCatalogProduct(productId, controller.signal)
       .then((catalogProduct) => {
         if (!controller.signal.aborted) {
           setProduct(catalogProduct);
-          // Preselect the first orderable variant so customer checkout starts from a valid option.
           setSelectedVariantId(String(
             catalogProduct.variants.find((variant) => variant.status === "AVAILABLE")?.id ?? "",
           ));
@@ -83,7 +81,6 @@ function ProductDetailContent({ productId }: { productId: number }) {
   }, [productId, requestVersion]);
 
   function retryProduct() {
-    // Incrementing the request version re-runs the loading effect without changing the product URL.
     setIsLoading(true);
     setErrorMessage(null);
     setIsNotFound(false);
@@ -124,7 +121,6 @@ function ProductDetailContent({ productId }: { productId: number }) {
     );
   }
 
-  // Keep checkout choices limited to variants the catalog currently exposes as orderable.
   const availableVariants = product.variants.filter((variant) => variant.status === "AVAILABLE");
   const selectedVariant = availableVariants.find(
     (variant) => String(variant.id) === selectedVariantId,
@@ -207,7 +203,6 @@ function ProductDetailContent({ productId }: { productId: number }) {
             </ul>
 
             {user?.role === "CUSTOMER" && selectedVariant ? (
-              // Customers can place orders only when at least one available variant is selected.
               <section className="mt-7 rounded-2xl border border-primary/40 bg-primary-soft p-5" aria-labelledby="product-cart-heading">
                 <h2 className="text-lg font-bold text-foreground" id="product-cart-heading">Add this garment to your order</h2>
                 <label className="mt-4 block text-sm font-semibold text-foreground" htmlFor="detail-cart-variant">
@@ -237,7 +232,6 @@ function ProductDetailContent({ productId }: { productId: number }) {
             <div className="mt-9 flex flex-wrap gap-3">
               <BackToCatalogLink />
               {user?.role === "SALES_OFFICER" ? (
-                // Sales officers can jump from the public detail view into the maintenance editor.
                 <Link
                   className="inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
                   to={getEditProductPagePath(product.id)}
@@ -255,7 +249,6 @@ function ProductDetailContent({ productId }: { productId: number }) {
 
 export function ProductDetailPage() {
   const { productId: productIdParameter } = useParams();
-  // Treat invalid route parameters the same as missing products to keep the user flow simple.
   const productId = parseProductPageId(productIdParameter);
 
   if (productId === null) {

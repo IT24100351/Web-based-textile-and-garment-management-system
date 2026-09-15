@@ -23,12 +23,10 @@ type VariantField = keyof ProductVariantInput;
 type ProductDetailsField = "name" | "category" | "description" | "imageUrl";
 type FormErrors = Record<string, string | undefined>;
 
-// Create one blank variant row with the default status used for newly added products.
 function emptyVariant(): ProductVariantInput {
   return { size: "", color: "", price: "", availability: "AVAILABLE" };
 }
 
-// Keep the initial form shape in a function so resets always get a fresh variant array.
 function emptyForm(): CreateProductInput {
   return {
     name: "",
@@ -39,7 +37,6 @@ function emptyForm(): CreateProductInput {
   };
 }
 
-// Trim outer whitespace and collapse repeated spaces before values are sent to the backend.
 function normalizeText(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -119,7 +116,6 @@ function apiErrorsToFormErrors(fields: Record<string, string>): FormErrors {
   return errors;
 }
 
-// Renders field-level validation text only when that input currently has an error.
 function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? <span className="mt-2 block text-sm text-danger" id={id}>{message}</span> : null;
 }
@@ -141,12 +137,10 @@ export function AddProductPage() {
   const displayedImage = imagePreviewUrl ?? form.imageUrl;
 
   function clearError(field: string) {
-    // Clear the edited field only, keeping unrelated validation messages visible.
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
   }
 
   function updateDetailsField(field: ProductDetailsField, value: string) {
-    // Update product-level fields such as name, category, description, and image URL.
     setForm((current) => ({ ...current, [field]: value }));
     clearError(field);
   }
@@ -156,7 +150,6 @@ export function AddProductPage() {
     field: Field,
     value: ProductVariantInput[Field],
   ) {
-    // Replace a single variant row immutably so React can re-render the changed input safely.
     setForm((current) => ({
       ...current,
       variants: current.variants.map((variant, variantIndex) => (
@@ -168,7 +161,6 @@ export function AddProductPage() {
   }
 
   function addVariant() {
-    // Append another sellable size and colour option without modifying existing rows.
     setForm((current) => ({ ...current, variants: [...current.variants, emptyVariant()] }));
     clearError("variants");
   }
@@ -200,7 +192,6 @@ export function AddProductPage() {
   }
 
   function removeImageFile() {
-    // Remove only the selected upload; an existing URL can still be typed afterward.
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
     setImageFile(null);
     setImagePreviewUrl(null);
@@ -235,7 +226,6 @@ export function AddProductPage() {
   }
 
   function resetForm() {
-    // Return the page to its original add-product state after a successful save.
     removeImageFile();
     setForm(emptyForm());
     setFieldErrors({});

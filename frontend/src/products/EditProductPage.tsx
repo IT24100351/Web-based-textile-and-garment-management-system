@@ -31,7 +31,6 @@ function formFromProduct(
   product: GarmentProductDetails,
   variant: ProductVariant,
 ): ProductFormInput {
-  // Copy shared product data plus the chosen variant into the flat editor form state.
   return {
     name: product.name,
     category: product.category.name,
@@ -128,7 +127,6 @@ function EditProductContent({ productId }: { productId: number }) {
   const [requestVersion, setRequestVersion] = useState(0);
 
   useEffect(() => {
-    // Reload the product whenever the route ID changes or the user explicitly retries.
     const controller = new AbortController();
 
     void getProduct(productId, controller.signal)
@@ -136,7 +134,6 @@ function EditProductContent({ productId }: { productId: number }) {
         if (controller.signal.aborted) {
           return;
         }
-        // Start with the first variant that can still be edited; discontinued variants stay read-only.
         const firstEditableVariant = storedProduct.variants.find(
           (variant) => variant.status !== "DISCONTINUED",
         );
@@ -172,7 +169,6 @@ function EditProductContent({ productId }: { productId: number }) {
   }, [productId, requestVersion]);
 
   function retryLoad() {
-    // Bump a lightweight version counter so the loading effect runs again without changing routes.
     setIsLoading(true);
     setLoadError(null);
     setIsNotFound(false);
@@ -183,7 +179,6 @@ function EditProductContent({ productId }: { productId: number }) {
     field: Field,
     value: ProductFormInput[Field],
   ) {
-    // Clear only the edited field's error so unrelated validation messages remain visible.
     setForm((current) => current ? { ...current, [field]: value } : current);
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
     setSuccessMessage(null);
@@ -193,7 +188,6 @@ function EditProductContent({ productId }: { productId: number }) {
     if (!product) {
       return;
     }
-    // Reject stale or discontinued IDs in case the select value no longer matches editable data.
     const variant = product.variants.find((candidate) => candidate.id === variantId);
     if (!variant || variant.status === "DISCONTINUED") {
       return;
@@ -213,7 +207,6 @@ function EditProductContent({ productId }: { productId: number }) {
       return;
     }
 
-    // Validate locally first, then send the normalized payload shape expected by the API.
     const errors = validateProductForm(form);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -231,7 +224,6 @@ function EditProductContent({ productId }: { productId: number }) {
       );
       setProduct(result.product);
       if (updatedVariant) {
-        // Refresh the form from the saved response so formatted server values become the source of truth.
         setForm(formFromProduct(result.product, updatedVariant));
       }
       setSuccessMessage(result.message);
@@ -251,7 +243,6 @@ function EditProductContent({ productId }: { productId: number }) {
     setDiscontinuationError(null);
     setIsDiscontinuing(true);
     try {
-      // Discontinuation is a lifecycle update: records stay stored, but the product leaves new-order flows.
       const result = await discontinueProduct(productId);
       setProduct(result.product);
       setDiscontinuationMessage(result.message);
@@ -332,7 +323,6 @@ function EditProductContent({ productId }: { productId: number }) {
     );
   }
 
-  // Detail links are useful only when customers can still see at least one available variant.
   const isPubliclyVisible = product.status === "ACTIVE"
     && product.category.status === "ACTIVE"
     && product.variants.some((variant) => variant.status === "AVAILABLE");
