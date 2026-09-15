@@ -236,7 +236,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     private long generatedId(KeyHolder keyHolder) 
     {
         Map<String, Object> keys = keyHolder.getKeys();
-        if (keys != null) {
+        if (keys != null) 
+            {
             return keys.entrySet().stream()
                     .filter(entry -> entry.getKey().equalsIgnoreCase("id"))
                     .map(Map.Entry::getValue)
@@ -247,6 +248,7 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                     .orElseThrow(() -> new IllegalStateException(
                             "Database did not return an inventory material ID."));
         }
+
         throw new IllegalStateException("Database did not return an inventory material ID.");
     }
 }
