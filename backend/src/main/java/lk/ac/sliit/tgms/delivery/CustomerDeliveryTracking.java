@@ -25,6 +25,7 @@ public record CustomerDeliveryTracking(long orderId, DeliveryProgress delivery) 
                         delivery.scheduledAt(),
                         delivery.status(),
                         delivery.date())),
+                        delivery.time())),
                         delivery.updatedAt()));
     }
 
