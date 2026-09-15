@@ -12,10 +12,7 @@ public final class OrderStatusLifecycle {
 
     public static List<OrderStatus> allowedTransitions(OrderStatus current) {
         return switch (current) {
-            case PENDING -> List.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED);
-            case CONFIRMED -> List.of(OrderStatus.IN_PRODUCTION, OrderStatus.CANCELLED);
-            case IN_PRODUCTION -> List.of(OrderStatus.READY_FOR_DELIVERY);
-            case READY_FOR_DELIVERY, COMPLETED, CANCELLED -> List.of();
+           
         };
     }
 
