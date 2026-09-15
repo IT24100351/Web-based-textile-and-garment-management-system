@@ -7,4 +7,6 @@ public record ProductionTaskMaterialUsage(
         long id,
         long productionTaskId,
         long inventoryMaterialId,
-        
+        BigDecimal quantityUsed,
+        long recordedByUserId,
+        Instant recordedAt) {}
