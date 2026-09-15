@@ -3,8 +3,7 @@ package lk.ac.sliit.tgms.delivery;
 import java.time.Instant;
 
 /**
- * Customer-safe Delivery tracking snapshot for one ownership-validated Order.
- *
+ 
  * <p>The Order module proves ownership before Delivery data is read. A missing Delivery is a
  * normal state and is represented by a null {@link #delivery()} rather than an error.</p>
  */
