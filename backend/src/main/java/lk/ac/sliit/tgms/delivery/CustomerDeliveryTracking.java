@@ -13,9 +13,8 @@ public record CustomerDeliveryTracking(long orderId, DeliveryProgress delivery) 
         return delivery != null;
     }
 
-    public static CustomerDeliveryTracking none(long orderId) {
-        return new CustomerDeliveryTracking(orderId, null);
-    }
+    
+    
 
     public static CustomerDeliveryTracking from(DeliveryRecord delivery) {
         return new CustomerDeliveryTracking(
