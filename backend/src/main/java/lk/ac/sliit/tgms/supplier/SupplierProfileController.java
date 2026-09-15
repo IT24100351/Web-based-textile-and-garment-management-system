@@ -21,7 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class SupplierProfileController {
 
     private final SupplierProfileService supplierProfileService;
-
+ 
+    public SupplierProfileController(SupplierProfileService supplierProfileService) {
+        this.supplierProfileService = supplierProfileService;
     
     }
 
