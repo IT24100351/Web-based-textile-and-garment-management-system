@@ -215,7 +215,8 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     private static InventoryMaterial mapMaterial(ResultSet resultSet) throws SQLException 
     {
         Long sourceMaterialSupplyId = resultSet.getLong("source_material_supply_id");
-        if (resultSet.wasNull()) {
+        if (resultSet.wasNull())
+        {
             sourceMaterialSupplyId = null;
         }
         return new InventoryMaterial(
@@ -237,7 +238,7 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     {
         Map<String, Object> keys = keyHolder.getKeys();
         if (keys != null) 
-            {
+        {
             return keys.entrySet().stream()
                     .filter(entry -> entry.getKey().equalsIgnoreCase("id"))
                     .map(Map.Entry::getValue)
