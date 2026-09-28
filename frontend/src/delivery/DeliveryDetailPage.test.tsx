@@ -54,7 +54,11 @@ const scheduled: StaffDeliveryRecord = {
   }],
 };
 
-
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={["/deliveries/77"]}>
+      <Routes><Route path="/deliveries/:deliveryId" element={<DeliveryDetailPage />} /></Routes>
+    </MemoryRouter>,
   );
 }
 
