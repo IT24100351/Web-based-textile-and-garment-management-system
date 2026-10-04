@@ -1,8 +1,8 @@
 export type CategoryStatus = "ACTIVE" | "INACTIVE";
 
-export type ProductStatus = "ACTIVE" | "INACTIVE" | "DISCONTINUED";
+export type ProductStatus = "ACTIVE" | "INACTIVE";
 
-export type VariantStatus = "AVAILABLE" | "UNAVAILABLE" | "DISCONTINUED";
+export type VariantStatus = "AVAILABLE" | "UNAVAILABLE";
 
 export interface ProductCategory {
   id: number;

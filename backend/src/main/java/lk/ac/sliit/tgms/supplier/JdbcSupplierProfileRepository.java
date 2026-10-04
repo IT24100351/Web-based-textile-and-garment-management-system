@@ -1,9 +1,7 @@
 package lk.ac.sliit.tgms.supplier;
 
 import java.sql.PreparedStatement;
-import java.util.Map;
 import java.util.Optional;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -29,9 +27,6 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * Retrieves the supplier profile associated with a user ID.
-     */
     @Override
     public Optional<SupplierProfile> findByUserId(long userId) {
         return jdbcTemplate.query(
@@ -46,9 +41,6 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 .stream()
                 .findFirst();
     }
-    /**
-     * Creates a new supplier profile in the database.
-     */
 
     @Override
     public long create(long userId, String businessName, String contactPhone, String address) {
@@ -71,9 +63,6 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 keyHolder);
         return generatedId(keyHolder);
     }
-    /**
-     * Updates the supplier profile details for a user.
-     */
 
     @Override
     public int update(long userId, String businessName, String contactPhone, String address) {
@@ -90,19 +79,10 @@ public class JdbcSupplierProfileRepository implements SupplierProfileRepository 
                 userId);
     }
 
-
-    private long generatedId(KeyHolder keyHolder) {
-        Map<String, Object> keys = keyHolder.getKeys();
-        if (keys != null) {
-            return keys.entrySet().stream()
-                    .filter(entry -> entry.getKey().equalsIgnoreCase("id"))
-                    .map(Map.Entry::getValue)
-                    .filter(Number.class::isInstance)
-                    .map(Number.class::cast)
-                    .findFirst()
-                    .map(Number::longValue)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Database did not return a supplier profile ID."));
+    static long generatedId(KeyHolder keyHolder) {
+        Number key = keyHolder.getKey();
+        if (key != null) {
+            return key.longValue();
         }
         throw new IllegalStateException("Database did not return a supplier profile ID.");
     }

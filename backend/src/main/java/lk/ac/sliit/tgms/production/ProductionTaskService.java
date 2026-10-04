@@ -21,6 +21,7 @@ import lk.ac.sliit.tgms.order.OrderHandoff;
 import lk.ac.sliit.tgms.order.OrderStatus;
 import lk.ac.sliit.tgms.order.OrderService;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -81,6 +82,26 @@ public class ProductionTaskService {
         }
 
         return productionTaskRepository.createTask(orderId, generateTaskNumber());
+    }
+
+    @Transactional
+    public void deletePendingTask(long taskId) {
+        ProductionTask task = requireTaskForUpdate(taskId);
+        if (task.status() != ProductionTaskStatus.PENDING
+                || task.startedAt() != null || task.completedAt() != null
+                || !productionTaskRepository.findMaterialUsage(task.id()).isEmpty()
+                || orderService.getHandoff(task.orderId()).currentStatus() != OrderStatus.CONFIRMED) {
+            throw new ProductionTaskInUseException();
+        }
+        try {
+            productionTaskRepository.deleteMaterialRequirements(task.id());
+            productionTaskRepository.deleteWorkDetails(task.id());
+            if (productionTaskRepository.deletePending(task.id()) != 1) {
+                throw new ProductionTaskInUseException();
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw new ProductionTaskInUseException();
+        }
     }
 
     @Transactional(readOnly = true)
@@ -356,6 +377,9 @@ public class ProductionTaskService {
             String workAssignment,
             String workNotes) {
         ProductionTask task = requireTask(taskId);
+        if (task.status() == ProductionTaskStatus.COMPLETED) {
+            throw new ProductionTaskCompletedException();
+        }
         ValidatedWorkDetails validated = validateWorkDetails(workDetails, workAssignment, workNotes);
 
         productionTaskRepository.saveWorkDetails(

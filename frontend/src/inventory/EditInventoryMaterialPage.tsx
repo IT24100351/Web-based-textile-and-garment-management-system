@@ -29,7 +29,7 @@ function normalizedInput(material: InventoryMaterial): UpdateInventoryMaterialIn
     materialType: material.materialType,
     unitOfMeasure: material.unitOfMeasure,
     lowStockThreshold: material.lowStockThreshold,
-    status: material.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+    status: material.status,
   };
 }
 
@@ -116,7 +116,7 @@ export function EditInventoryMaterialPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (materialId === null || !form || !material || material.status === "DISCONTINUED") return;
+    if (materialId === null || !form || !material) return;
     const errors = validate(form);
     setFieldErrors(errors);
     setSubmissionError(null);
@@ -157,8 +157,6 @@ export function EditInventoryMaterialPage() {
     );
   }
 
-  const archived = material.status === "DISCONTINUED";
-
   return (
     <section className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
       <div className="mx-auto max-w-4xl">
@@ -174,46 +172,40 @@ export function EditInventoryMaterialPage() {
           <div><p className="text-xs uppercase tracking-wide text-muted">Supplier source</p><p className="mt-1 font-semibold text-foreground">{material.sourceMaterialSupplyId ? `Supply ID ${material.sourceMaterialSupplyId}` : "No supplier link"}</p></div>
         </div>
 
-        {archived ? (
-          <div className="mt-6 rounded-2xl border border-warning-border bg-warning-soft p-5 text-warning" role="status">
-            This material is archived. Its historical record is preserved and metadata can no longer be edited.
-          </div>
-        ) : null}
-
         <form className="mt-8 rounded-3xl border border-border bg-surface/70 p-6 sm:p-8" noValidate onSubmit={handleSubmit}>
           <div className="grid gap-6 sm:grid-cols-2">
             <label className="text-sm font-medium text-foreground">Material code
-              <input className={inputClassName} disabled={archived} maxLength={64} onChange={(event) => updateField("materialCode", event.target.value)} value={form.materialCode} />
+              <input className={inputClassName} maxLength={64} onChange={(event) => updateField("materialCode", event.target.value)} value={form.materialCode} />
               <FieldError message={fieldErrors.materialCode} />
             </label>
             <label className="text-sm font-medium text-foreground">Material name
-              <input className={inputClassName} disabled={archived} maxLength={160} onChange={(event) => updateField("materialName", event.target.value)} value={form.materialName} />
+              <input className={inputClassName} maxLength={160} onChange={(event) => updateField("materialName", event.target.value)} value={form.materialName} />
               <FieldError message={fieldErrors.materialName} />
             </label>
             <label className="text-sm font-medium text-foreground">Material type
-              <select className={inputClassName} disabled={archived} onChange={(event) => updateField("materialType", event.target.value as InventoryMaterialType)} value={form.materialType}>
+              <select className={inputClassName} onChange={(event) => updateField("materialType", event.target.value as InventoryMaterialType)} value={form.materialType}>
                 <option value="FABRIC">Fabric</option><option value="RAW_MATERIAL">Raw material</option>
               </select>
             </label>
             <label className="text-sm font-medium text-foreground">Unit of measure
-              <input className={inputClassName} disabled={archived} maxLength={32} onChange={(event) => updateField("unitOfMeasure", event.target.value)} value={form.unitOfMeasure} />
+              <input className={inputClassName} maxLength={32} onChange={(event) => updateField("unitOfMeasure", event.target.value)} value={form.unitOfMeasure} />
               <FieldError message={fieldErrors.unitOfMeasure} />
             </label>
             <div>
               <label className="text-sm font-medium text-foreground" htmlFor="edit-inventory-threshold">Low-stock threshold</label>
-              <input className={inputClassName} disabled={archived} id="edit-inventory-threshold" inputMode="decimal" onChange={(event) => updateField("lowStockThreshold", event.target.value)} value={form.lowStockThreshold} />
+              <input className={inputClassName} id="edit-inventory-threshold" inputMode="decimal" onChange={(event) => updateField("lowStockThreshold", event.target.value)} value={form.lowStockThreshold} />
               <span className="mt-2 block text-xs text-muted">Current quantity is intentionally not editable on this page.</span>
               <FieldError message={fieldErrors.lowStockThreshold} />
             </div>
             <div>
               <label className="text-sm font-medium text-foreground" htmlFor="edit-inventory-status">Status</label>
-              <select className={inputClassName} disabled={archived} id="edit-inventory-status" onChange={(event) => updateField("status", event.target.value as "ACTIVE" | "INACTIVE")} value={archived ? "DISCONTINUED" : form.status}>
-                <option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option disabled value="DISCONTINUED">Discontinued</option>
+              <select className={inputClassName} id="edit-inventory-status" onChange={(event) => updateField("status", event.target.value as "ACTIVE" | "INACTIVE")} value={form.status}>
+                <option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>
               </select>
-              <span className="mt-2 block text-xs text-muted">Use Archive from the inventory list for permanent discontinuation.</span>
+              <span className="mt-2 block text-xs text-muted">Inactive materials remain recorded but cannot receive or release stock.</span>
             </div>
             <label className="sm:col-span-2 text-sm font-medium text-foreground">Description
-              <textarea className={`${inputClassName} min-h-32 resize-y`} disabled={archived} maxLength={500} onChange={(event) => updateField("materialDescription", event.target.value)} value={form.materialDescription} />
+              <textarea className={`${inputClassName} min-h-32 resize-y`} maxLength={500} onChange={(event) => updateField("materialDescription", event.target.value)} value={form.materialDescription} />
               <FieldError message={fieldErrors.materialDescription} />
             </label>
           </div>
@@ -222,7 +214,7 @@ export function EditInventoryMaterialPage() {
           {successMessage ? <p className="mt-5 rounded-xl border border-success-border bg-success-soft p-4 text-success" role="status">{successMessage}</p> : null}
 
           <div className="mt-7 flex flex-wrap gap-3">
-            <button className="rounded-full bg-primary px-5 py-2.5 font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={archived || isSubmitting} type="submit">{isSubmitting ? "Saving…" : "Save changes"}</button>
+            <button className="rounded-full bg-primary px-5 py-2.5 font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting} type="submit">{isSubmitting ? "Saving…" : "Save changes"}</button>
             <Link className="rounded-full border border-border px-5 py-2.5 font-semibold text-foreground" to={inventoryMaterialListPagePath}>Back to inventory</Link>
           </div>
         </form>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        logicalFilePath="db/changelog/changes/20260923091000_add_order_product_snapshots.xml"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260923091000-add-order-product-snapshots" author="tgms">
+        <comment>
+            Preserve the product name and image selected when an order line is created.
+        </comment>
+
+        <addColumn tableName="order_items">
+            <column name="product_name_snapshot" type="VARCHAR(160)"/>
+            <column name="product_image_url_snapshot" type="VARCHAR(500)"/>
+        </addColumn>
+
+        <sql>
+            UPDATE order_items oi
+            SET product_name_snapshot = (
+                    SELECT p.name FROM garment_products p WHERE p.id = oi.product_id
+                ),
+                product_image_url_snapshot = (
+                    SELECT p.image_url FROM garment_products p WHERE p.id = oi.product_id
+                )
+        </sql>
+
+        <addNotNullConstraint
+                tableName="order_items"
+                columnName="product_name_snapshot"
+                columnDataType="VARCHAR(160)"/>
+
+        <rollback>
+            <dropColumn tableName="order_items" columnName="product_image_url_snapshot"/>
+            <dropColumn tableName="order_items" columnName="product_name_snapshot"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

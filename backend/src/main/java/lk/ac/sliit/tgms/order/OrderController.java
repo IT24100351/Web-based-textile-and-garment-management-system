@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,6 +56,13 @@ public class OrderController {
     @OrderStaffReadable
     public OrderDetailResponse order(@PathVariable long orderId) {
         return OrderDetailResponse.forStaff(orderService.getStaffOrder(orderId));
+    }
+
+    @DeleteMapping("/{orderId}")
+    @SalesOfficerOnly
+    public ResponseEntity<Void> delete(@PathVariable long orderId) {
+        orderService.deletePendingOrder(orderId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{orderId}/billing")
@@ -305,12 +313,15 @@ public class OrderController {
             long productId,
             long variantId,
             int quantity,
+            String productName,
+            String productImageUrl,
             String selectedSize,
             String selectedColor) {
 
         static OrderHandoffItemResponse from(OrderHandoffItem item) {
             return new OrderHandoffItemResponse(
                     item.orderItemId(), item.productId(), item.variantId(), item.quantity(),
+                    item.productName(), item.productImageUrl(),
                     item.selectedSize(), item.selectedColor());
         }
     }
@@ -331,6 +342,8 @@ public class OrderController {
             Instant createdAt,
             Instant updatedAt,
             int itemCount,
+            String previewProductName,
+            String previewProductImageUrl,
             String totalAmount) {
 
         static OrderSummaryResponse from(OrderSummary order) {
@@ -344,6 +357,8 @@ public class OrderController {
                     order.createdAt(),
                     order.updatedAt(),
                     order.itemCount(),
+                    order.previewProductName(),
+                    order.previewProductImageUrl(),
                     order.totalAmount().toPlainString());
         }
     }
@@ -430,6 +445,7 @@ public class OrderController {
             long productId,
             long variantId,
             String productName,
+            String productImageUrl,
             int quantity,
             String selectedSize,
             String selectedColor,
@@ -442,6 +458,7 @@ public class OrderController {
                     item.productId(),
                     item.variantId(),
                     item.productName(),
+                    item.productImageUrl(),
                     item.quantity(),
                     item.selectedSize(),
                     item.selectedColor(),

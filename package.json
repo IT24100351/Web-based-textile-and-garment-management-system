@@ -1,0 +1,60 @@
+{
+  "name": "textile-garment-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.16.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,magenta \"npm run dev:backend\" \"node scripts/run-frontend-dev.mjs\"",
+    "dev:backend": "node scripts/run-backend-dev.mjs",
+    "build": "npm run build --workspace frontend && npm run build:backend",
+    "build:backend": "cd backend && ./mvnw clean package -DskipTests",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm run test --workspace frontend",
+    "test:backend": "cd backend && ./mvnw clean test",
+    "db:status": "dotenv -e backend/.env -- node scripts/run-liquibase.mjs status",
+    "db:migrate": "dotenv -e backend/.env -- node scripts/run-liquibase.mjs update",
+    "db:rollback:preview": "dotenv -e backend/.env -- node scripts/run-liquibase.mjs rollback-preview",
+    "db:rollback": "dotenv -e backend/.env -- node scripts/run-liquibase.mjs rollback",
+    "db:verify": "cd backend && ./mvnw clean -Dtest=DatabaseMigrationTests test",
+    "typecheck": "npm run typecheck --workspace frontend && npm run compile:backend",
+    "compile:backend": "cd backend && ./mvnw clean compile",
+    "lint": "npm run lint --workspace frontend && eslint scripts",
+    "verify": "npm run security:check && npm run lint && npm run typecheck && npm test && npm run db:verify && npm run build",
+    "security:check": "./scripts/security-check.sh",
+    "smtp:check": "node scripts/check-smtp.mjs backend/.env",
+    "test:nfr": "cd backend && ./mvnw -Dtest=NonFunctionalRequirementsIntegrationTests test",
+    "test:uat": "./scripts/run-uat.sh",
+    "uat:catalog:check": "node scripts/verify-uat-catalog.mjs",
+    "deploy:env:check": "./scripts/deployment/check-production-env.sh",
+    "deploy:smoke": "./scripts/deployment/smoke-test.sh",
+    "db:backup": "./scripts/deployment/mysql-backup.sh",
+    "db:restore": "./scripts/deployment/mysql-restore.sh",
+    "deploy:verify": "node scripts/deployment/verify-deployment-assets.mjs",
+    "demo:reset": "dotenv -e backend/.env -- ./scripts/demo/reset-demo.sh --confirm RESET_TGMS_DEMO",
+    "demo:business:seed": "dotenv -e backend/.env -- ./scripts/demo/seed-business-data.sh --confirm ADD_TGMS_BUSINESS_DATA",
+    "demo:verify": "dotenv -e backend/.env -- ./scripts/demo/verify-demo-db.sh",
+    "demo:assets:check": "node scripts/demo/verify-demo-assets.mjs",
+    "handover:verify": "npm run demo:assets:check && npm run deploy:verify && npm run uat:catalog:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.5",
+    "dotenv-cli": "^11.0.0",
+    "eslint": "^10.9.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "typescript-eslint": "^8.67.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}

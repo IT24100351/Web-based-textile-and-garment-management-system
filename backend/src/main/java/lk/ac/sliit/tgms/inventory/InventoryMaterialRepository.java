@@ -36,7 +36,11 @@ public interface InventoryMaterialRepository {
             BigDecimal lowStockThreshold,
             InventoryMaterialStatus status);
 
-    int archive(long materialId);
+    boolean isReferenced(long materialId);
+
+    int deleteById(long materialId);
+
+    int receiveStockIfActive(long materialId, BigDecimal quantity);
 
     int consumeStockIfAvailable(long materialId, BigDecimal quantity);
 }

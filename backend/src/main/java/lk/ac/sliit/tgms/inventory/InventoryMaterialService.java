@@ -9,6 +9,7 @@ import java.util.Map;
 import lk.ac.sliit.tgms.notification.NotificationDispatchService;
 import lk.ac.sliit.tgms.supplier.MaterialSupplyNotFoundException;
 import lk.ac.sliit.tgms.supplier.MaterialSupplyService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,10 +90,6 @@ public class InventoryMaterialService {
             BigDecimal lowStockThreshold,
             InventoryMaterialStatus status) {
         InventoryMaterial current = requireMaterial(materialId);
-        if (current.status() == InventoryMaterialStatus.DISCONTINUED) {
-            throw new InventoryMaterialArchivedException();
-        }
-
         String normalizedCode = normalizeRequiredText(materialCode);
         String normalizedName = normalizeRequiredText(materialName);
         String normalizedDescription = normalizeOptionalText(materialDescription);
@@ -117,10 +114,7 @@ public class InventoryMaterialService {
                     lowStockThreshold,
                     status);
             if (updatedRows != 1) {
-                InventoryMaterial latest = requireMaterial(materialId);
-                if (latest.status() == InventoryMaterialStatus.DISCONTINUED) {
-                    throw new InventoryMaterialArchivedException();
-                }
+                requireMaterial(materialId);
                 throw new IllegalStateException("Inventory material metadata was not updated.");
             }
         } catch (DuplicateKeyException exception) {
@@ -140,18 +134,46 @@ public class InventoryMaterialService {
     }
 
     @Transactional
-    public InventoryMaterial archiveMaterial(long materialId) {
-        InventoryMaterial current = requireMaterial(materialId);
-        if (current.status() == InventoryMaterialStatus.DISCONTINUED) {
-            return current;
+    public void deleteMaterial(long materialId) {
+        InventoryMaterial material = requireMaterial(materialId);
+        if (inventoryMaterialRepository.isReferenced(materialId)) {
+            throw new InventoryMaterialInUseException();
         }
-        int archivedRows = inventoryMaterialRepository.archive(materialId);
-        if (archivedRows != 1) {
-            throw new IllegalStateException("Inventory material could not be archived.");
+        if (material.currentQuantity().signum() > 0) {
+            throw new InventoryMaterialHasStockException();
         }
+        try {
+            if (inventoryMaterialRepository.deleteById(materialId) != 1) {
+                throw new InventoryMaterialHasStockException();
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw new InventoryMaterialInUseException();
+        }
+    }
+
+    @Transactional
+    public InventoryMaterial receiveStock(long materialId, BigDecimal quantity) {
+        validateMaterialId(materialId);
+        validateReceiveQuantity(quantity);
+        InventoryMaterial before = requireMaterial(materialId);
+        if (before.status() != InventoryMaterialStatus.ACTIVE) {
+            throw new InventoryMaterialUnavailableException(before.status());
+        }
+        if (before.sourceMaterialSupplyId() == null) {
+            throw new InventoryMaterialValidationException(Map.of(
+                    "sourceMaterialSupplyId",
+                    "Inventory material must be linked to a supplier supply before stock can be received."));
+        }
+
+        int updatedRows = inventoryMaterialRepository.receiveStockIfActive(materialId, quantity);
+        if (updatedRows != 1) {
+            InventoryMaterial latest = requireMaterial(materialId);
+            throw new InventoryMaterialUnavailableException(latest.status());
+        }
+
         return inventoryMaterialRepository.findById(materialId)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Archived inventory material could not be read back."));
+                        "Received inventory material could not be read back."));
     }
 
     @Transactional(readOnly = true)
@@ -243,7 +265,7 @@ public class InventoryMaterialService {
                 materialId, quantity);
         if (updatedRows == 0) {
             InventoryMaterial material = inventoryMaterialRepository.findById(materialId)
-                    .orElseThrow(() -> materialNotFound());
+                    .orElseThrow(InventoryMaterialNotFoundException::new);
             if (material.status() != InventoryMaterialStatus.ACTIVE) {
                 throw new InventoryMaterialUnavailableException(material.status());
             }
@@ -264,7 +286,7 @@ public class InventoryMaterialService {
     public InventoryMaterial requireMaterial(long materialId) {
         validateMaterialId(materialId);
         return inventoryMaterialRepository.findById(materialId)
-                .orElseThrow(() -> materialNotFound());
+                .orElseThrow(InventoryMaterialNotFoundException::new);
     }
 
     private InventoryMaterialStatus parseStatus(String status, Map<String, String> fields) {
@@ -275,7 +297,7 @@ public class InventoryMaterialService {
         try {
             return InventoryMaterialStatus.valueOf(normalizedStatus.toUpperCase());
         } catch (IllegalArgumentException exception) {
-            fields.put("status", "Status must be ACTIVE, INACTIVE, or DISCONTINUED.");
+            fields.put("status", "Status must be ACTIVE or INACTIVE.");
             return null;
         }
     }
@@ -301,11 +323,6 @@ public class InventoryMaterialService {
         }
     }
 
-    private InventoryMaterialValidationException materialNotFound() {
-        return new InventoryMaterialValidationException(
-                Map.of("materialId", "Inventory material was not found."));
-    }
-
     private void validateUsageQuantity(BigDecimal quantity) {
         Map<String, String> fields = new LinkedHashMap<>();
         validatePositiveDecimal(
@@ -316,6 +333,21 @@ public class InventoryMaterialService {
                 3,
                 "Usage quantity",
                 "Usage quantity is required.");
+        if (!fields.isEmpty()) {
+            throw new InventoryMaterialValidationException(fields);
+        }
+    }
+
+    private void validateReceiveQuantity(BigDecimal quantity) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        validatePositiveDecimal(
+                fields,
+                "quantity",
+                quantity,
+                11,
+                3,
+                "Received quantity",
+                "Received quantity is required.");
         if (!fields.isEmpty()) {
             throw new InventoryMaterialValidationException(fields);
         }
@@ -397,8 +429,6 @@ public class InventoryMaterialService {
                 lowStockThreshold);
         if (status == null) {
             fields.put("status", "Status is required.");
-        } else if (status == InventoryMaterialStatus.DISCONTINUED) {
-            fields.put("status", "Use the archive operation to discontinue an inventory material.");
         }
         if (!fields.isEmpty()) {
             throw new InventoryMaterialValidationException(fields);

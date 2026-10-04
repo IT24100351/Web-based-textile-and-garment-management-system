@@ -93,7 +93,8 @@ public class MaterialSupplyController {
                 request.quantity(),
                 request.unitPrice(),
                 request.deliveryLeadTimeDays(),
-                request.deliveryNotes());
+                request.deliveryNotes(),
+                request.status());
         return new UpdateMaterialSupplyResponse(
                 "Material supply updated successfully.",
                 MaterialSupplyResponse.from(supply));
@@ -101,14 +102,12 @@ public class MaterialSupplyController {
 
     @DeleteMapping("/{supplyId}")
     @SupplierOnly
-    public ArchiveMaterialSupplyResponse archiveOwnSupply(
+    public DeleteMaterialSupplyResponse deleteOwnSupply(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable long supplyId) {
-        MaterialSupply supply = materialSupplyService.archiveOwnSupply(
-                currentUserId(jwt), supplyId);
-        return new ArchiveMaterialSupplyResponse(
-                "Material supply archived successfully.",
-                MaterialSupplyResponse.from(supply));
+        materialSupplyService.deleteOwnSupply(currentUserId(jwt), supplyId);
+        return new DeleteMaterialSupplyResponse(
+                "Material supply deleted successfully.", supplyId);
     }
 
     private long currentUserId(Jwt jwt) {
@@ -176,13 +175,13 @@ public class MaterialSupplyController {
                     @PositiveOrZero(message = "Delivery lead time must not be negative.")
                     Integer deliveryLeadTimeDays,
             @Size(max = 500, message = "Delivery notes must not exceed 500 characters.")
-                    String deliveryNotes) {}
+                    String deliveryNotes,
+            @NotNull(message = "Status is required.") MaterialSupplyStatus status) {}
 
     public record UpdateMaterialSupplyResponse(
             String message, MaterialSupplyResponse supply) {}
 
-    public record ArchiveMaterialSupplyResponse(
-            String message, MaterialSupplyResponse supply) {}
+    public record DeleteMaterialSupplyResponse(String message, long supplyId) {}
 
     public record MaterialSupplyListResponse(List<MaterialSupplyListItemResponse> supplies) {}
 

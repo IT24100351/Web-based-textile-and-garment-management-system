@@ -28,7 +28,25 @@ const inputClassName =
 const orderNumberPattern = /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/i;
 
 function statusLabel(status: OrderStatus | DeliveryStatus) {
+  if (status === "READY_FOR_DELIVERY") return "Ready For Delivery";
   return status.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function orderSituation(status: OrderStatus) {
+  switch (status) {
+    case "PENDING":
+      return "We received your order. Our sales team still needs to confirm it.";
+    case "CONFIRMED":
+      return "Your order is confirmed and waiting to start production.";
+    case "IN_PRODUCTION":
+      return "Your order is being made by the production team.";
+    case "READY_FOR_DELIVERY":
+      return "Production is complete. The sales team can now prepare delivery.";
+    case "COMPLETED":
+      return "Your order has been delivered and completed.";
+    case "CANCELLED":
+      return "This order has been cancelled.";
+  }
 }
 
 function formatDate(value: string) {
@@ -238,6 +256,9 @@ export function CustomerOrderTrackingPage() {
                 <h2 className="text-xl font-bold text-foreground" id="tracking-progress-heading">Order progress</h2>
                 <p className="mt-2 text-sm text-muted">
                   Current Order Management status: <span className="font-semibold text-primary">{statusLabel(tracking.currentStatus)}</span>
+                </p>
+                <p className="mt-2 rounded-xl border border-info-border bg-info-soft p-3 text-sm text-info">
+                  {orderSituation(tracking.currentStatus)}
                 </p>
                 {tracking.orderHistory.length === 0 ? (
                   <div className="mt-4 rounded-xl border border-border bg-surface/60 p-4">

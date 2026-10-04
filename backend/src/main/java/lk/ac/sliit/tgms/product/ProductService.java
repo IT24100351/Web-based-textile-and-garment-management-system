@@ -9,17 +9,25 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final ProductImageStorageService productImageStorageService;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(
+            ProductRepository productRepository,
+            ProductImageStorageService productImageStorageService) {
         this.productRepository = productRepository;
+        this.productImageStorageService = productImageStorageService;
     }
 
     @Transactional
@@ -112,6 +120,20 @@ public class ProductService {
                         "Created garment product could not be read back."));
     }
 
+    private void scheduleReplacedImageCleanup(String oldImageUrl, String newImageUrl) {
+        if (Objects.equals(oldImageUrl, newImageUrl)
+                || oldImageUrl == null
+                || productRepository.isImageUrlReferenced(oldImageUrl)) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                productImageStorageService.deleteManagedImage(oldImageUrl);
+            }
+        });
+    }
+
     @Transactional
     public GarmentProductDetails updateProduct(
             long productId,
@@ -123,7 +145,8 @@ public class ProductService {
             String size,
             String color,
             BigDecimal price,
-            CreateProductAvailability availability) {
+            CreateProductAvailability availability,
+            ProductStatus status) {
         validateProductId(productId);
         validateVariantId(variantId);
 
@@ -145,16 +168,11 @@ public class ProductService {
 
         GarmentProductDetails existing = productRepository.findProductById(productId)
                 .orElseThrow(ProductNotFoundException::new);
-        ProductVariant selectedVariant = existing.variants().stream()
-                .filter(variant -> variant.id() == variantId)
-                .findFirst()
-                .orElseThrow(() -> new ProductValidationException(Map.of(
-                        "variantId", "The selected variant does not belong to this product.")));
-        if (selectedVariant.status() == VariantStatus.DISCONTINUED) {
+        ProductStatus resolvedStatus = status == null ? existing.product().status() : status;
+        if (existing.variants().stream().noneMatch(variant -> variant.id() == variantId)) {
             throw new ProductValidationException(Map.of(
-                    "variantId", "A discontinued variant cannot be edited."));
+                    "variantId", "The selected variant does not belong to this product."));
         }
-
         ProductCategory category = findOrCreateCategory(normalizedCategory);
         if (category.status() != CategoryStatus.ACTIVE) {
             throw new InactiveProductCategoryException();
@@ -166,7 +184,8 @@ public class ProductService {
                     category.id(),
                     normalizedName,
                     normalizedDescription,
-                    normalizedImageUrl);
+                    normalizedImageUrl,
+                    resolvedStatus);
             int updatedVariants = productRepository.updateVariant(
                     productId,
                     variantId,
@@ -183,34 +202,46 @@ public class ProductService {
                     "color", "This product already has a variant with the selected size and color."));
         }
 
+        scheduleReplacedImageCleanup(existing.product().imageUrl(), normalizedImageUrl);
+
         return productRepository.findProductById(productId)
                 .orElseThrow(() -> new IllegalStateException(
                         "Updated garment product could not be read back."));
     }
 
     @Transactional
-    public GarmentProductDetails discontinueProduct(long productId) {
+    public void deleteProduct(long productId) {
         validateProductId(productId);
         GarmentProductDetails existing = productRepository.findProductById(productId)
                 .orElseThrow(ProductNotFoundException::new);
-
-        long variantsToDiscontinue = existing.variants().stream()
-                .filter(variant -> variant.status() != VariantStatus.DISCONTINUED)
-                .count();
-        int discontinuedVariants = productRepository.discontinueVariants(productId);
-        int discontinuedProducts = productRepository.discontinueProduct(productId);
-        int expectedProductUpdates = existing.product().status() == ProductStatus.DISCONTINUED
-                ? 0
-                : 1;
-        if (discontinuedVariants != variantsToDiscontinue
-                || discontinuedProducts != expectedProductUpdates) {
-            throw new IllegalStateException(
-                    "Garment product discontinuation affected an unexpected row count.");
+        if (productRepository.isHistoricallyReferenced(productId)) {
+            throw new ProductInUseException();
         }
 
-        return productRepository.findProductById(productId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Discontinued garment product could not be read back."));
+        String imageUrl = existing.product().imageUrl();
+        boolean imageUsedElsewhere = imageUrl != null
+                && productRepository.isImageUrlReferencedElsewhere(imageUrl, productId);
+        try {
+            int deletedVariants = productRepository.deleteVariants(productId);
+            if (deletedVariants != existing.variants().size()) {
+                throw new IllegalStateException(
+                        "Garment product deletion affected an unexpected variant row count.");
+            }
+            if (productRepository.deleteProduct(productId) != 1) {
+                throw new ProductNotFoundException();
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw new ProductInUseException();
+        }
+
+        if (imageUrl != null && !imageUsedElsewhere) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    productImageStorageService.deleteManagedImage(imageUrl);
+                }
+            });
+        }
     }
 
     @Transactional(readOnly = true)
@@ -234,6 +265,7 @@ public class ProductService {
                 details.product().id(),
                 variant.id(),
                 details.product().name(),
+                details.product().imageUrl(),
                 details.category().id(),
                 details.category().name(),
                 variant.size(),
@@ -247,6 +279,29 @@ public class ProductService {
         validateProductId(productId);
         return productRepository.findProductById(productId)
                 .orElseThrow(ProductNotFoundException::new);
+    }
+
+    @Transactional(readOnly = true)
+    public List<GarmentProductDetails> getManagementCatalog(String search, String status) {
+        String normalizedSearch = normalizeOptionalText(search);
+        Map<String, String> fields = new LinkedHashMap<>();
+        validateOptionalText(fields, "search", normalizedSearch, 160, "Search");
+
+        ProductStatus normalizedStatus = null;
+        String normalizedStatusText = normalizeOptionalText(status);
+        if (normalizedStatusText != null) {
+            try {
+                normalizedStatus = ProductStatus.valueOf(
+                        normalizedStatusText.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                fields.put("status", "Product status must be ACTIVE or INACTIVE.");
+            }
+        }
+        if (!fields.isEmpty()) {
+            throw new ProductValidationException(fields);
+        }
+        return productRepository.findManagementCatalog(
+                new ProductManagementFilter(normalizedSearch, normalizedStatus));
     }
 
     @Transactional(readOnly = true)
@@ -279,6 +334,10 @@ public class ProductService {
         validateOptionalText(fields, "size", normalizedSize, 32, "Size");
         validateOptionalText(fields, "color", normalizedColor, 64, "Color");
         VariantStatus normalizedAvailability = parseAvailability(availability, fields);
+        if (normalizedAvailability == VariantStatus.UNAVAILABLE) {
+            fields.put("availability",
+                    "The public catalogue only contains AVAILABLE variants.");
+        }
 
         if (!fields.isEmpty()) {
             throw new ProductValidationException(fields);
@@ -347,7 +406,7 @@ public class ProductService {
         } catch (IllegalArgumentException exception) {
             fields.put(
                     "availability",
-                    "Availability must be AVAILABLE, UNAVAILABLE, or DISCONTINUED.");
+                    "Availability must be AVAILABLE or UNAVAILABLE.");
             return null;
         }
     }

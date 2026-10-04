@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        logicalFilePath="db/changelog/changes/20260923184000_remove_product_discontinued_status.xml"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260923184000-remove-product-discontinued-status" author="tgms">
+        <comment>
+            Replace Product fake-delete DISCONTINUED rows with safe CRUD deletion while preserving
+            Order and Quotation history through INACTIVE products and UNAVAILABLE variants. This
+            destructive legacy cleanup is forward-only and intentionally has no rollback because
+            deleted or converted data cannot be reconstructed.
+        </comment>
+
+        <sql>
+            DELETE FROM garment_product_variants
+            WHERE product_id IN (
+                SELECT id
+                FROM garment_products
+                WHERE status = 'DISCONTINUED'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM order_items oi
+                      WHERE oi.product_id = garment_products.id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM quotation_items qi
+                      WHERE qi.product_id = garment_products.id
+                  )
+            )
+        </sql>
+
+        <sql>
+            DELETE FROM garment_products
+            WHERE status = 'DISCONTINUED'
+              AND NOT EXISTS (
+                  SELECT 1 FROM order_items oi
+                  WHERE oi.product_id = garment_products.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM quotation_items qi
+                  WHERE qi.product_id = garment_products.id
+              )
+        </sql>
+
+        <update tableName="garment_products">
+            <column name="status" value="INACTIVE"/>
+            <where>status = 'DISCONTINUED'</where>
+        </update>
+        <update tableName="garment_product_variants">
+            <column name="status" value="UNAVAILABLE"/>
+            <where>status = 'DISCONTINUED'</where>
+        </update>
+
+        <sql dbms="mysql">
+            ALTER TABLE garment_products DROP CHECK ck_garment_products_status
+        </sql>
+        <sql dbms="h2">
+            ALTER TABLE garment_products DROP CONSTRAINT ck_garment_products_status
+        </sql>
+        <sql>
+            ALTER TABLE garment_products
+            ADD CONSTRAINT ck_garment_products_status
+            CHECK (status IN ('ACTIVE', 'INACTIVE'))
+        </sql>
+
+        <sql dbms="mysql">
+            ALTER TABLE garment_product_variants DROP CHECK ck_garment_product_variants_status
+        </sql>
+        <sql dbms="h2">
+            ALTER TABLE garment_product_variants DROP CONSTRAINT ck_garment_product_variants_status
+        </sql>
+        <sql>
+            ALTER TABLE garment_product_variants
+            ADD CONSTRAINT ck_garment_product_variants_status
+            CHECK (status IN ('AVAILABLE', 'UNAVAILABLE'))
+        </sql>
+    </changeSet>
+</databaseChangeLog>

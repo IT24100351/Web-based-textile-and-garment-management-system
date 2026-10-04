@@ -32,6 +32,7 @@ export interface CreatedOrderItem {
   productId: number;
   variantId: number;
   productName: string;
+  productImageUrl?: string | null;
   quantity: number;
   selectedSize: string;
   selectedColor: string;
@@ -61,6 +62,8 @@ export interface OrderSummary {
   createdAt: string;
   updatedAt: string;
   itemCount: number;
+  previewProductName?: string | null;
+  previewProductImageUrl?: string | null;
   totalAmount: string;
 }
 
@@ -69,6 +72,7 @@ export interface OrderDetailItem {
   productId: number;
   variantId: number;
   productName: string;
+  productImageUrl?: string | null;
   quantity: number;
   selectedSize: string;
   selectedColor: string;
@@ -159,6 +163,8 @@ export interface OrderHandoffItem {
   orderItemId: number;
   productId: number;
   variantId: number;
+  productName?: string;
+  productImageUrl?: string | null;
   quantity: number;
   selectedSize: string;
   selectedColor: string;
@@ -215,6 +221,10 @@ export async function createMyOrder(
 ): Promise<CreateOrderResponse> {
   const response = await api.post<CreateOrderResponse>("/orders/mine", { items });
   return response.data;
+}
+
+export async function deleteOrder(orderId: number): Promise<void> {
+  await api.delete(`/orders/${orderId}`);
 }
 
 export async function getOrders(

@@ -8,19 +8,19 @@ import {
 } from "../api/products";
 import { useAuth } from "../auth/useAuth";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
+import { MotionSwap } from "../motion/MotionSwap";
 import {
   getCustomerPlaceOrderWithItemPath,
   getProductDetailPagePath,
 } from "../navigation/navigation";
 import { ProductImage } from "./ProductImage";
-import type { GarmentProductDetails, VariantStatus } from "./productTypes";
+import type { GarmentProductDetails } from "./productTypes";
 
 interface CatalogFilterForm {
   search: string;
   category: string;
   size: string;
   color: string;
-  availability: "" | VariantStatus;
 }
 
 const emptyFilterForm: CatalogFilterForm = {
@@ -28,7 +28,6 @@ const emptyFilterForm: CatalogFilterForm = {
   category: "",
   size: "",
   color: "",
-  availability: "",
 };
 
 const filterInputClassName =
@@ -45,7 +44,6 @@ function buildCatalogFilters(form: CatalogFilterForm): ProductCatalogFilters {
   if (category) filters.category = category;
   if (size) filters.size = size;
   if (color) filters.color = color;
-  if (form.availability) filters.availability = form.availability;
   return filters;
 }
 
@@ -76,10 +74,10 @@ function ProductCard({
   const maximumPrice = sortedByPrice.at(-1)?.price;
 
   return (
-    <li className="motion-interactive-card group overflow-hidden rounded-3xl border border-border bg-surface app-shadow transition hover:-translate-y-1 hover:border-primary/40">
+    <li className="motion-interactive-card group overflow-hidden rounded-3xl border border-border bg-surface app-shadow hover:border-primary/40">
       <ProductImage
         alt={`${product.name} product photograph`}
-        className="aspect-[4/3] w-full border-b border-border transition-transform duration-500 ease-[var(--ease-emphasized)] group-hover:scale-[1.015]"
+        className="aspect-[4/3] w-full border-b border-border transition-transform duration-[var(--motion-slow)] ease-[var(--ease-emphasized)] group-hover:scale-[1.015]"
         productName={product.name}
         src={product.imageUrl}
       />
@@ -158,6 +156,7 @@ export function ProductCatalogPage() {
   const [appliedFilters, setAppliedFilters] = useState<ProductCatalogFilters>({});
   const [products, setProducts] = useState<GarmentProductDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
 
@@ -181,6 +180,7 @@ export function ProductCatalogPage() {
       .finally(() => {
         if (!controller.signal.aborted) {
           setIsLoading(false);
+          setHasLoaded(true);
         }
       });
 
@@ -220,7 +220,7 @@ export function ProductCatalogPage() {
     <section className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
       <div className="mx-auto max-w-6xl">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Garment Product Management
+          Product catalogue
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
           Garment catalog
@@ -234,7 +234,7 @@ export function ProductCatalogPage() {
           className="mt-8 rounded-3xl border border-border bg-surface/75 p-5 sm:p-6"
           onSubmit={applyFilters}
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-sm font-medium text-foreground" htmlFor="catalog-search">
               Product name
               <input
@@ -280,27 +280,10 @@ export function ProductCatalogPage() {
                 value={filterForm.color}
               />
             </label>
-            <label className="text-sm font-medium text-foreground" htmlFor="catalog-availability">
-              Availability
-              <select
-                className={filterInputClassName}
-                id="catalog-availability"
-                onChange={(event) => updateFilter(
-                  "availability",
-                  event.target.value as CatalogFilterForm["availability"],
-                )}
-                value={filterForm.availability}
-              >
-                <option value="">Any permitted status</option>
-                <option value="AVAILABLE">Available</option>
-                <option value="UNAVAILABLE">Unavailable</option>
-                <option value="DISCONTINUED">Discontinued</option>
-              </select>
-            </label>
           </div>
           <p className="mt-4 text-xs leading-5 text-muted">
-            Category, size, and color use exact case-insensitive matches. Public catalog
-            permissions still hide unavailable and discontinued variants.
+            Category, size, and color use exact case-insensitive matches. The public catalogue
+            always hides inactive products and unavailable variants.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <button
@@ -319,8 +302,9 @@ export function ProductCatalogPage() {
           </div>
         </form>
 
-        <div className="mt-8">
-          {isLoading ? (
+        <div aria-busy={isLoading} className="mt-8">
+          <MotionSwap stateKey={!hasLoaded ? "loading" : errorMessage ? "error" : products.length === 0 ? "empty" : "content"}>
+          {!hasLoaded ? (
             <LoadingState
               message="Fetching the garments and variants that match the current filters."
               title="Loading garment catalog"
@@ -356,7 +340,8 @@ export function ProductCatalogPage() {
               title={filtersAreActive ? "No matching garments" : "No garments available"}
             />
           ) : (
-            <>
+            <div>
+              {isLoading ? <p className="mb-3 text-sm text-muted" role="status">Updating catalogue results…</p> : null}
               <p aria-live="polite" className="text-sm text-muted">
                 {products.length} {products.length === 1 ? "product" : "products"} found
               </p>
@@ -369,8 +354,9 @@ export function ProductCatalogPage() {
                   />
                 ))}
               </ul>
-            </>
+            </div>
           )}
+          </MotionSwap>
         </div>
       </div>
     </section>

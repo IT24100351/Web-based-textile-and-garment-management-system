@@ -3,7 +3,7 @@ import axios from "axios";
 import { api } from "./client";
 
 export type InventoryMaterialType = "FABRIC" | "RAW_MATERIAL";
-export type InventoryMaterialStatus = "ACTIVE" | "INACTIVE" | "DISCONTINUED";
+export type InventoryMaterialStatus = "ACTIVE" | "INACTIVE";
 export type InventoryStockState = "LOW_STOCK" | "SUFFICIENT";
 
 export interface InventoryMaterial {
@@ -45,7 +45,7 @@ export interface UpdateInventoryMaterialInput {
   materialType: InventoryMaterialType;
   unitOfMeasure: string;
   lowStockThreshold: string;
-  status: Exclude<InventoryMaterialStatus, "DISCONTINUED">;
+  status: InventoryMaterialStatus;
 }
 
 export interface UpdateInventoryMaterialResponse {
@@ -53,9 +53,9 @@ export interface UpdateInventoryMaterialResponse {
   material: InventoryMaterial;
 }
 
-export interface ArchiveInventoryMaterialResponse {
+export interface DeleteInventoryMaterialResponse {
   message: string;
-  material: InventoryMaterial;
+  materialId: number;
 }
 
 export type InventoryAvailabilityState =
@@ -73,6 +73,11 @@ export interface InventoryMaterialAvailability {
 }
 
 export interface ConsumeInventoryMaterialResponse {
+  message: string;
+  material: InventoryMaterial;
+}
+
+export interface ReceiveInventoryMaterialResponse {
   message: string;
   material: InventoryMaterial;
 }
@@ -140,10 +145,10 @@ export async function updateInventoryMaterial(
   return response.data;
 }
 
-export async function archiveInventoryMaterial(
+export async function deleteInventoryMaterial(
   materialId: number,
-): Promise<ArchiveInventoryMaterialResponse> {
-  const response = await api.delete<ArchiveInventoryMaterialResponse>(
+): Promise<DeleteInventoryMaterialResponse> {
+  const response = await api.delete<DeleteInventoryMaterialResponse>(
     `/inventory-materials/${materialId}`,
   );
   return response.data;
@@ -167,6 +172,17 @@ export async function consumeInventoryMaterial(
 ): Promise<ConsumeInventoryMaterialResponse> {
   const response = await api.post<ConsumeInventoryMaterialResponse>(
     `/inventory-materials/${materialId}/consume`,
+    { quantity: quantity.trim() },
+  );
+  return response.data;
+}
+
+export async function receiveInventoryMaterial(
+  materialId: number,
+  quantity: string,
+): Promise<ReceiveInventoryMaterialResponse> {
+  const response = await api.post<ReceiveInventoryMaterialResponse>(
+    `/inventory-materials/${materialId}/receive`,
     { quantity: quantity.trim() },
   );
   return response.data;

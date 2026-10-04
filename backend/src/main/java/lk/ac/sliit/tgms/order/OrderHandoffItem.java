@@ -4,6 +4,8 @@ public record OrderHandoffItem(
         long orderItemId,
         long productId,
         long variantId,
+        String productName,
+        String productImageUrl,
         int quantity,
         String selectedSize,
         String selectedColor) {
@@ -13,6 +15,8 @@ public record OrderHandoffItem(
                 item.id(),
                 item.productId(),
                 item.variantId(),
+                item.productName(),
+                item.productImageUrl(),
                 item.quantity(),
                 item.selectedSize(),
                 item.selectedColor());

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteProductionTask,
   getProductionTaskDetail,
   getProductionTaskMaterialAvailability,
   getProductionTaskMaterialOptions,
@@ -18,6 +19,7 @@ import {
 import { ProductionTaskDetailPage } from "./ProductionTaskDetailPage";
 
 vi.mock("../api/productionTasks", () => ({
+  deleteProductionTask: vi.fn(),
   getProductionTaskDetail: vi.fn(),
   getProductionTaskMaterialAvailability: vi.fn(),
   getProductionTaskMaterialOptions: vi.fn(),
@@ -34,7 +36,12 @@ vi.mock("../api/productionTasks", () => ({
   },
 }));
 
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ user: { role: "PRODUCTION_MANAGER" } }),
+}));
+
 const mockedGetDetail = vi.mocked(getProductionTaskDetail);
+const mockedDeleteTask = vi.mocked(deleteProductionTask);
 const mockedGetAvailability = vi.mocked(getProductionTaskMaterialAvailability);
 const mockedGetMaterialOptions = vi.mocked(getProductionTaskMaterialOptions);
 const mockedGetUsage = vi.mocked(getProductionTaskMaterialUsage);
@@ -189,6 +196,31 @@ describe("ProductionTaskDetailPage", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it("deletes a never-started task only after confirmation", async () => {
+    mockedDeleteTask.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Delete pending task" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete production task?" });
+    expect(mockedDeleteTask).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(mockedDeleteTask).toHaveBeenCalledWith(8801));
+  });
+
+  it("keeps a task visible after a delete conflict", async () => {
+    mockedDeleteTask.mockRejectedValue(new Error("Only pending production tasks that have not started can be deleted."));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Delete pending task" }));
+    await user.click(within(screen.getByRole("alertdialog", { name: "Delete production task?" })).getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("have not started");
+    expect(screen.getByText("PRD-ABCDEF12345678901234")).toBeInTheDocument();
   });
 
   it("shows linked order details and persists work assignment details", async () => {
@@ -515,6 +547,37 @@ describe("ProductionTaskDetailPage", () => {
     expect(await screen.findByText("Production status updated successfully.")).toBeInTheDocument();
     expect(screen.getByText(/Production status:/)).toHaveTextContent("COMPLETED");
     expect(screen.getByText(/Order progress:/)).toHaveTextContent("READY FOR DELIVERY");
+    expect(screen.getByText(
+      "Production completed. The order is ready for delivery scheduling by a Sales Officer.",
+    )).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Ready for delivery" })).not.toBeInTheDocument();
+    expect(screen.getByText("Completed production records are read-only.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save production details" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("shows pending sibling tasks when production completes but the order is still in production", async () => {
+    mockedGetDetail.mockResolvedValue({
+      ...detail,
+      task: {
+        ...detail.task,
+        status: "COMPLETED",
+        startedAt: "2026-08-23T16:00:00Z",
+        completedAt: "2026-08-23T18:00:00Z",
+      },
+      order: {
+        ...detail.order,
+        currentStatus: "IN_PRODUCTION",
+        readyForProduction: false,
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText(/other production tasks for this order are still pending/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(
+      "Production completed. The order is ready for delivery scheduling by a Sales Officer.",
+    )).not.toBeInTheDocument();
   });
 
   it("shows exact shortage details and disables start when required stock is insufficient", async () => {

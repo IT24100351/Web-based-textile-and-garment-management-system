@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   generateOrderInvoice,
+  deleteOrder,
   getMyOrderBilling,
   getMyOrderDetail,
   getMyOrders,
@@ -26,6 +27,7 @@ import {
 } from "./OrderReadPages";
 
 vi.mock("../api/orders", () => ({
+  deleteOrder: vi.fn(),
   getOrders: vi.fn(),
   getOrderDetail: vi.fn(),
   getOrderBilling: vi.fn(),
@@ -45,7 +47,12 @@ vi.mock("../api/orders", () => ({
   },
 }));
 
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ user: { role: "SALES_OFFICER" } }),
+}));
+
 const mockedGetOrders = vi.mocked(getOrders);
+const mockedDeleteOrder = vi.mocked(deleteOrder);
 const mockedGetOrderDetail = vi.mocked(getOrderDetail);
 const mockedGetOrderBilling = vi.mocked(getOrderBilling);
 const mockedGetMyOrders = vi.mocked(getMyOrders);
@@ -216,6 +223,18 @@ describe("TGMS-45 order read pages", () => {
     ));
   });
 
+  it("shows completed production as Ready For Delivery on the staff orders page", async () => {
+    mockedGetOrders.mockResolvedValue([{
+      ...summary,
+      status: "READY_FOR_DELIVERY",
+      updatedAt: "2026-08-23T14:00:00Z",
+    }]);
+    renderRoute("/orders", "/orders", <StaffOrderListPage />);
+
+    expect(await screen.findByRole("heading", { name: "Customer orders" })).toBeInTheDocument();
+    expect(screen.getAllByText("Ready For Delivery").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("renders staff order detail from stored item snapshots and totals", async () => {
     renderRoute("/orders/91", "/orders/:orderId", <StaffOrderDetailPage />);
 
@@ -250,6 +269,35 @@ describe("TGMS-45 order read pages", () => {
     expect(screen.getByText("Pending → Confirmed")).toBeInTheDocument();
     expect(screen.getByText(/production progress is owned by Production Management/i)).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "In Production" })).not.toBeInTheDocument();
+  });
+
+  it("deletes a pending order only after confirmation", async () => {
+    mockedGetOrderDetail.mockResolvedValue({ ...detail, status: "PENDING", statusHistory: [] });
+    mockedDeleteOrder.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderRoute("/orders/91", "/orders/:orderId", <StaffOrderDetailPage />);
+
+    await screen.findByRole("button", { name: "Delete pending order" });
+    await user.click(screen.getByRole("button", { name: "Delete pending order" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete order?" });
+    expect(mockedDeleteOrder).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(mockedDeleteOrder).toHaveBeenCalledWith(91));
+    expect(screen.queryByRole("heading", { name: "ORD-ABC123" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a pending order visible after a delete conflict", async () => {
+    mockedGetOrderDetail.mockResolvedValue({ ...detail, status: "PENDING", statusHistory: [] });
+    mockedDeleteOrder.mockRejectedValue(new Error("This order cannot be deleted because it has already entered the business workflow."));
+    const user = userEvent.setup();
+    renderRoute("/orders/91", "/orders/:orderId", <StaffOrderDetailPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Delete pending order" }));
+    await user.click(within(screen.getByRole("alertdialog", { name: "Delete order?" })).getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("already entered the business workflow");
+    expect(screen.getByRole("heading", { name: "ORD-ABC123" })).toBeInTheDocument();
   });
 
   it("lets staff generate an invoice and record manual payment details", async () => {

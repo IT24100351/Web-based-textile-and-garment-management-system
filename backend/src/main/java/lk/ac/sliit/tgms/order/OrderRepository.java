@@ -12,6 +12,8 @@ public interface OrderRepository {
             long orderId,
             long productId,
             long variantId,
+            String productNameSnapshot,
+            String productImageUrlSnapshot,
             int quantity,
             String selectedSize,
             String selectedColor,
@@ -20,6 +22,16 @@ public interface OrderRepository {
     List<OrderSummary> findOrders(OrderQuery query, Long customerId);
 
     Optional<OrderDetail> findOrderDetail(long orderId, Long customerId);
+
+    Optional<OrderStatus> findStatusForUpdate(long orderId);
+
+    boolean hasDownstreamHistory(long orderId);
+
+    void deleteStatusHistory(long orderId);
+
+    void deleteItems(long orderId);
+
+    int deletePending(long orderId);
 
     Optional<OrderInvoice> findInvoiceByOrderId(long orderId);
 

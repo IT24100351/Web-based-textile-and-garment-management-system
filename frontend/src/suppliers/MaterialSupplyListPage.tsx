@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../auth/useAuth";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { MotionSwap } from "../motion/MotionSwap";
 import {
   getEditMaterialSupplyPagePath,
   newMaterialSupplyPagePath,
@@ -88,7 +89,7 @@ function SupplyCard({ supply, showSupplier }: {
           className="mt-5 inline-flex rounded-full border border-primary/50 px-4 py-2 text-sm font-semibold text-primary transition hover:border-primary hover:text-foreground"
           to={getEditMaterialSupplyPagePath(supply.id)}
         >
-          {supply.status === "DISCONTINUED" ? "View archived supply" : "Edit supply details"}
+          Edit supply details
         </Link>
       ) : null}
     </li>
@@ -101,6 +102,7 @@ export function MaterialSupplyListPage() {
   const [appliedFilters, setAppliedFilters] = useState<MaterialSupplyListFilters>({});
   const [supplies, setSupplies] = useState<MaterialSupplyListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
 
@@ -119,7 +121,10 @@ export function MaterialSupplyListPage() {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+          setHasLoaded(true);
+        }
       });
     return () => controller.abort();
   }, [appliedFilters, requestVersion]);
@@ -209,7 +214,6 @@ export function MaterialSupplyListPage() {
                 <option value="">Any status</option>
                 <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>
-                <option value="DISCONTINUED">Discontinued</option>
               </select>
             </label>
           </div>
@@ -230,9 +234,10 @@ export function MaterialSupplyListPage() {
           </div>
         </form>
 
-        <div className="mt-8">
-          {isLoading ? (
-            <LoadingState
+        <div aria-busy={isLoading} className="mt-8">
+          <MotionSwap stateKey={!hasLoaded ? "loading" : errorMessage ? "error" : supplies.length === 0 ? "empty" : "content"}>
+          {!hasLoaded ? (
+              <LoadingState
               message="Fetching the material supplies permitted for your account."
               title="Loading material supplies"
             />
@@ -276,7 +281,8 @@ export function MaterialSupplyListPage() {
               title={filtersAreActive ? "No matching supplies" : "No material supplies"}
             />
           ) : (
-            <>
+            <div>
+              {isLoading ? <p className="mb-3 text-sm text-muted" role="status">Updating material supply results…</p> : null}
               <p aria-live="polite" className="text-sm text-muted">
                 {supplies.length} {supplies.length === 1 ? "supply" : "supplies"} found
               </p>
@@ -285,8 +291,9 @@ export function MaterialSupplyListPage() {
                   <SupplyCard key={supply.id} showSupplier={!supplierView} supply={supply} />
                 ))}
               </ul>
-            </>
+            </div>
           )}
+          </MotionSwap>
         </div>
       </div>
     </section>

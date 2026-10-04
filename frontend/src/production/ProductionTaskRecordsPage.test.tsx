@@ -34,6 +34,27 @@ const completed = {
   readyForDelivery: true,
 };
 
+const readyToComplete = {
+  task: {
+    id: 8802,
+    taskNumber: "PRD-RECORD-8802",
+    orderId: 7502,
+    status: "IN_PROGRESS" as const,
+    startedAt: "2026-08-24T09:00:00Z",
+    completedAt: null,
+    createdAt: "2026-08-24T08:30:00Z",
+    updatedAt: "2026-08-24T10:15:00Z",
+    qualityControlResult: "PASSED" as const,
+    qualityCheckedByUserId: 7999,
+    qualityCheckedAt: "2026-08-24T10:00:00Z",
+  },
+  orderNumber: "ORD-RECORD-7502",
+  customerId: 7102,
+  orderStatus: "IN_PRODUCTION" as const,
+  orderItemCount: 1,
+  readyForDelivery: false,
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -51,7 +72,31 @@ describe("ProductionTaskRecordsPage", () => {
     expect(await screen.findByText("PRD-RECORD-8801")).toBeInTheDocument();
     expect(screen.getByText("PASSED")).toBeInTheDocument();
     expect(screen.getByText("READY")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View production record" })).toHaveAttribute("href", "/production/tasks/8801");
+    expect(screen.getByText("Production is complete and the order is ready for delivery.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View completed record" })).toHaveAttribute("href", "/production/tasks/8801");
     await waitFor(() => expect(mockedGetRecords).toHaveBeenLastCalledWith("COMPLETED", expect.any(AbortSignal)));
+  });
+
+  it("shows when an active production record is ready to complete", async () => {
+    mockedGetRecords.mockResolvedValue([readyToComplete]);
+    render(<MemoryRouter><ProductionTaskRecordsPage /></MemoryRouter>);
+
+    expect(await screen.findByText("PRD-RECORD-8802")).toBeInTheDocument();
+    expect(screen.getByText("Quality control has passed. Open the record to mark production completed.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Complete production" })).toHaveAttribute("href", "/production/tasks/8802");
+  });
+
+  it("explains why a completed task's order is still in production", async () => {
+    mockedGetRecords.mockResolvedValue([{
+      ...completed,
+      orderStatus: "IN_PRODUCTION",
+      readyForDelivery: false,
+    }]);
+    render(<MemoryRouter><ProductionTaskRecordsPage /></MemoryRouter>);
+
+    expect(await screen.findByText("This task is complete; other production tasks for the order are still pending."))
+      .toBeInTheDocument();
+    expect(screen.queryByText("Production is complete and the order is ready for delivery."))
+      .not.toBeInTheDocument();
   });
 });

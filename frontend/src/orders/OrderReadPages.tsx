@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   generateOrderInvoice,
+  deleteOrder,
   getMyOrderBilling,
   getMyOrderDetail,
   getMyOrders,
@@ -20,7 +21,9 @@ import {
   type OrderSummary,
 } from "../api/orders";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { useAuth } from "../auth/useAuth";
 import {
   customerOrderHistoryPagePath,
   getCustomerOrderDetailPagePath,
@@ -29,6 +32,7 @@ import {
   parseOrderPageId,
   staffOrderListPagePath,
 } from "../navigation/navigation";
+import { ProductImage } from "../products/ProductImage";
 
 type Audience = "staff" | "customer";
 
@@ -45,6 +49,7 @@ const statuses: OrderStatus[] = [
 ];
 
 function statusLabel(status: OrderStatus) {
+  if (status === "READY_FOR_DELIVERY") return "Ready For Delivery";
   return status.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -136,6 +141,8 @@ function listPath(audience: Audience) {
 }
 
 function OrderListPage({ audience }: { audience: Audience }) {
+  const location = useLocation();
+  const deletedOrderNumber = (location.state as { deletedOrderNumber?: string } | null)?.deletedOrderNumber;
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrderStatus | "">("");
@@ -173,6 +180,29 @@ function OrderListPage({ audience }: { audience: Audience }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audience]);
 
+  useEffect(() => {
+    if (audience !== "staff") return undefined;
+
+    function refreshStaffOrders() {
+      void load(undefined, activeSearch, activeStatus);
+    }
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") {
+        refreshStaffOrders();
+      }
+    }
+
+    window.addEventListener("focus", refreshStaffOrders);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshStaffOrders);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+    // Staff order list should refetch with the latest applied filters when the tab is revisited.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audience, activeSearch, activeStatus]);
+
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedSearch = search.trim();
@@ -205,6 +235,7 @@ function OrderListPage({ audience }: { audience: Audience }) {
             ? "Find customer orders by order number, customer name or email, and inspect the stored item and price snapshots."
             : "Review orders placed by your signed-in customer account. Other customers' orders are never included in this history."}
         </p>
+        {deletedOrderNumber ? <p className="mt-5 rounded-xl border border-success-border bg-success-soft p-4 text-sm text-success" role="status">Pending order {deletedOrderNumber} deleted successfully.</p> : null}
 
         {audience === "staff" && (
           <form className="mt-8 grid gap-4 rounded-3xl border border-border bg-surface/70 p-6 md:grid-cols-[1fr_240px_auto] md:items-end" onSubmit={applyFilters}>
@@ -267,9 +298,17 @@ function OrderListPage({ audience }: { audience: Audience }) {
                 {orders.map((order) => (
                   <article className="motion-record rounded-3xl border border-border bg-surface/70 p-6" key={order.id}>
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted">Order #{order.id}</p>
-                        <h2 className="mt-2 text-xl font-bold text-foreground">{order.orderNumber}</h2>
+                      <div className="flex min-w-0 gap-4">
+                        <ProductImage
+                          alt={`${order.previewProductName ?? order.orderNumber} order preview`}
+                          className="h-20 w-20 shrink-0 rounded-xl border border-border"
+                          productName={order.previewProductName ?? order.orderNumber}
+                          src={order.previewProductImageUrl}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted">Order #{order.id}</p>
+                          <h2 className="mt-2 text-xl font-bold text-foreground">{order.orderNumber}</h2>
+                        </div>
                       </div>
                       <StatusBadge status={order.status} />
                     </div>
@@ -306,6 +345,8 @@ function OrderListPage({ audience }: { audience: Audience }) {
 }
 
 function OrderDetailPage({ audience }: { audience: Audience }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { orderId } = useParams();
   const parsedOrderId = parseOrderPageId(orderId);
   const [order, setOrder] = useState<OrderDetail | null>(null);
@@ -315,6 +356,9 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
   const [statusUpdateMessage, setStatusUpdateMessage] = useState<string | null>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [billing, setBilling] = useState<OrderBilling | null>(null);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
@@ -336,6 +380,22 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
       setPaymentMethod(nextBilling.payment.paymentMethod ?? "");
       setPaymentReference(nextBilling.payment.paymentReference ?? "");
       setPaymentNote(nextBilling.payment.note ?? "");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!order || audience !== "staff" || user?.role !== "SALES_OFFICER") return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteOrder(order.id);
+      setIsDeleteOpen(false);
+      navigate(staffOrderListPagePath, { state: { deletedOrderNumber: order.orderNumber } });
+    } catch (caught: unknown) {
+      setDeleteError(getOrderApiError(caught, "Order could not be deleted.").message);
+      setIsDeleteOpen(false);
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -513,6 +573,10 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
             <div><dt className="text-xs uppercase text-muted">Last updated</dt><dd className="mt-1 text-foreground">{formatDate(order.updatedAt)}</dd></div>
             <div><dt className="text-xs uppercase text-muted">Order total</dt><dd className="mt-1 text-xl font-bold text-foreground">{money(order.totalAmount)}</dd></div>
           </dl>
+          {audience === "staff" && user?.role === "SALES_OFFICER" && order.status === "PENDING" && billing !== null && !billing.invoiceGenerated ? (
+            <button className="mt-5 rounded-xl border border-danger-border px-4 py-2.5 font-semibold text-danger disabled:opacity-50" disabled={isDeleting} onClick={() => setIsDeleteOpen(true)} type="button">Delete pending order</button>
+          ) : null}
+          {deleteError ? <p className="mt-4 text-sm text-danger" role="alert">{deleteError}</p> : null}
 
           <section className="mt-7 rounded-2xl border border-border bg-background/50 p-5" aria-labelledby="billing-heading">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -667,7 +731,7 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
                     : order.status === "IN_PRODUCTION"
                       ? "Production Management controls progress and marks the order ready for delivery when all required work is complete."
                       : order.status === "READY_FOR_DELIVERY"
-                        ? "Final order completion is synchronized by Delivery Management after the delivery is marked delivered."
+                        ? "Production preparation is complete. Sales can prepare and schedule delivery."
                         : "This order is in a terminal status and has no permitted next transition."}
                 </p>
               )}
@@ -695,17 +759,25 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
 
           <div className="mt-8">
             <h2 className="text-xl font-bold text-foreground">Items</h2>
-            <p className="mt-2 text-sm text-muted">Size, color and price shown below are the stored order-time snapshots. Product name is the current catalog label for the referenced stable Product ID.</p>
+            <p className="mt-2 text-sm text-muted">Product name, image, size, color and price shown below come from the stored order-time snapshots; the stable Product ID is retained only as the historical catalog reference.</p>
             <div className="mt-4 space-y-4">
               {order.items.map((item) => (
                 <article className="rounded-2xl border border-border bg-background/60 p-5" key={item.id}>
-                  <div className="flex flex-wrap justify-between gap-4">
-                    <div>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 gap-4">
+                      <ProductImage
+                        alt={`${item.productName} ordered garment`}
+                        className="h-24 w-24 shrink-0 rounded-xl border border-border"
+                        productName={item.productName}
+                        src={item.productImageUrl}
+                      />
+                      <div className="min-w-0">
                       <h3 className="font-semibold text-foreground">{item.productName}</h3>
                       <p className="mt-1 text-xs text-muted">Product #{item.productId} · Variant #{item.variantId} · Line #{item.id}</p>
                       <p className="mt-2 text-sm text-foreground-muted">{item.selectedSize} · {item.selectedColor} · Qty {item.quantity}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-left sm:text-right">
                       <p className="text-sm text-muted">{money(item.unitPriceSnapshot)} each</p>
                       <p className="mt-1 text-lg font-bold text-foreground">{money(item.lineTotal)}</p>
                     </div>
@@ -718,6 +790,16 @@ function OrderDetailPage({ audience }: { audience: Audience }) {
             </div>
           </div>
         </div>
+        <ConfirmDialog
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          description="This permanently removes this pending order. Orders that have entered Production, Delivery, or billing cannot be deleted."
+          isBusy={isDeleting}
+          isOpen={isDeleteOpen}
+          onCancel={() => setIsDeleteOpen(false)}
+          onConfirm={() => void confirmDelete()}
+          title="Delete order?"
+        />
       </div>
     </section>
   );

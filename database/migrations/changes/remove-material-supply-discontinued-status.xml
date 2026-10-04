@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        logicalFilePath="db/changelog/changes/20260923183000_remove_material_supply_discontinued_status.xml"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260923183000-remove-material-supply-discontinued-status" author="tgms">
+        <comment>
+            Replace Material Supply fake-delete DISCONTINUED rows with safe CRUD deletion while
+            preserving Inventory-linked supplies as INACTIVE historical source records. This
+            destructive legacy cleanup is forward-only and intentionally has no rollback because
+            deleted or converted data cannot be reconstructed.
+        </comment>
+
+        <sql>
+            DELETE FROM material_supplies
+            WHERE status = 'DISCONTINUED'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM inventory_materials im
+                  WHERE im.source_material_supply_id = material_supplies.id
+              )
+        </sql>
+
+        <update tableName="material_supplies">
+            <column name="status" value="INACTIVE"/>
+            <where>status = 'DISCONTINUED'</where>
+        </update>
+
+        <sql dbms="mysql">
+            ALTER TABLE material_supplies DROP CHECK ck_material_supplies_status
+        </sql>
+        <sql dbms="h2">
+            ALTER TABLE material_supplies DROP CONSTRAINT ck_material_supplies_status
+        </sql>
+        <sql>
+            ALTER TABLE material_supplies
+            ADD CONSTRAINT ck_material_supplies_status
+            CHECK (status IN ('ACTIVE', 'INACTIVE'))
+        </sql>
+    </changeSet>
+</databaseChangeLog>

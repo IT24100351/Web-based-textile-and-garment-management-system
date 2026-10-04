@@ -263,7 +263,7 @@ class InventoryMaterialApiIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.error.fields.status")
-                        .value("Status must be ACTIVE, INACTIVE, or DISCONTINUED."))
+                        .value("Status must be ACTIVE or INACTIVE."))
                 .andExpect(jsonPath("$.error.fields.materialType")
                         .value("Material type must be FABRIC or RAW_MATERIAL."));
     }
@@ -393,6 +393,95 @@ class InventoryMaterialApiIntegrationTests {
     }
 
     @Test
+    void inventoryManagerReceivesSupplierStockAndReturnsUpdatedMaterial() throws Exception {
+        UserAccount inventoryManager = insertUser(
+                6913, "inventory6913@example.com", UserRole.INVENTORY_MANAGER);
+        UserAccount supplier = insertUser(
+                6953, "inventory-ticket32-supplier-receive@example.com", UserRole.SUPPLIER);
+        long supplierId = insertSupplierProfile(supplier.id(), "Receive Source Supplier");
+        long supplyId = insertSupply(supplierId, "SUP-REC-001", "Received cotton fabric");
+        Cookie session = sessionFor(inventoryManager, UserRole.INVENTORY_MANAGER);
+
+        mockMvc.perform(post("/api/inventory-materials")
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceMaterialSupplyId": %d,
+                                  "materialCode": "INV-REC-001",
+                                  "materialName": "Received cotton fabric",
+                                  "materialDescription": "Main store supplier receipt stock",
+                                  "materialType": "FABRIC",
+                                  "unitOfMeasure": "metre",
+                                  "currentQuantity": 120.000,
+                                  "lowStockThreshold": 25.000
+                                }
+                                """.formatted(supplyId)))
+                .andExpect(status().isCreated());
+        long materialId = jdbcTemplate.queryForObject(
+                "SELECT id FROM inventory_materials WHERE material_code = ?",
+                Long.class,
+                "INV-REC-001");
+
+        mockMvc.perform(post("/api/inventory-materials/{materialId}/receive", materialId)
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "quantity": 80.500
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("Supplier material received into inventory successfully."))
+                .andExpect(jsonPath("$.material.id").value((int) materialId))
+                .andExpect(jsonPath("$.material.sourceMaterialSupplyId").value((int) supplyId))
+                .andExpect(jsonPath("$.material.currentQuantity").value("200.500"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT current_quantity FROM inventory_materials WHERE id = ?",
+                        java.math.BigDecimal.class,
+                        materialId))
+                .isEqualByComparingTo("200.500");
+    }
+
+    @Test
+    void stockReceiptRequiresSupplierProvenanceBeforeChangingQuantity() throws Exception {
+        UserAccount inventoryManager = insertUser(
+                6914, "inventory6914@example.com", UserRole.INVENTORY_MANAGER);
+        Cookie session = sessionFor(inventoryManager, UserRole.INVENTORY_MANAGER);
+
+        mockMvc.perform(post("/api/inventory-materials")
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validMaterialRequest()))
+                .andExpect(status().isCreated());
+        long materialId = jdbcTemplate.queryForObject(
+                "SELECT id FROM inventory_materials WHERE material_code = ?",
+                Long.class,
+                "INV-RAW-001");
+
+        mockMvc.perform(post("/api/inventory-materials/{materialId}/receive", materialId)
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "quantity": 3.000
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.sourceMaterialSupplyId")
+                        .value("Inventory material must be linked to a supplier supply before stock can be received."));
+
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT current_quantity FROM inventory_materials WHERE id = ?",
+                        java.math.BigDecimal.class,
+                        materialId))
+                .isEqualByComparingTo("25.000");
+    }
+
+    @Test
     void insufficientStockIsRejectedWithoutPartiallyChangingQuantity() throws Exception {
         UserAccount inventoryManager = insertUser(
                 6906, "inventory6906@example.com", UserRole.INVENTORY_MANAGER);
@@ -478,10 +567,8 @@ class InventoryMaterialApiIntegrationTests {
                                   "quantity": 1.000
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.error.fields.materialId")
-                        .value("Inventory material was not found."));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("INVENTORY_MATERIAL_NOT_FOUND"));
 
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM inventory_materials", Integer.class))
@@ -511,6 +598,13 @@ class InventoryMaterialApiIntegrationTests {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
         mockMvc.perform(get("/api/inventory-materials/low-stock")
+                        .cookie(sessionFor(customer, UserRole.CUSTOMER)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mockMvc.perform(delete("/api/inventory-materials/{materialId}", 1))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+        mockMvc.perform(delete("/api/inventory-materials/{materialId}", 1)
                         .cookie(sessionFor(customer, UserRole.CUSTOMER)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
@@ -604,7 +698,7 @@ class InventoryMaterialApiIntegrationTests {
     }
 
     @Test
-    void archivePreservesInventoryHistoryAndBlocksFurtherEditOrConsumption() throws Exception {
+    void inventoryManagerDeletesUnusedMaterialAndSubsequentReadReturnsNotFound() throws Exception {
         UserAccount inventoryManager = insertUser(
                 6911, "inventory69011@example.com", UserRole.INVENTORY_MANAGER);
         Cookie session = sessionFor(inventoryManager, UserRole.INVENTORY_MANAGER);
@@ -618,66 +712,37 @@ class InventoryMaterialApiIntegrationTests {
                 Long.class,
                 "INV-RAW-001");
 
+        jdbcTemplate.update("UPDATE inventory_materials SET current_quantity = 0 WHERE id = ?", materialId);
+
         mockMvc.perform(delete("/api/inventory-materials/{materialId}", materialId)
                         .cookie(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("Inventory material archived successfully."))
-                .andExpect(jsonPath("$.material.status").value("DISCONTINUED"))
-                .andExpect(jsonPath("$.material.currentQuantity").value("25.000"));
+                .andExpect(jsonPath("$.message").value("Inventory material deleted successfully."))
+                .andExpect(jsonPath("$.materialId").value((int) materialId));
 
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM inventory_materials WHERE id = ?",
                         Integer.class,
                         materialId))
-                .isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject(
-                        "SELECT current_quantity FROM inventory_materials WHERE id = ?",
-                        java.math.BigDecimal.class,
-                        materialId))
-                .isEqualByComparingTo("25.000");
+                .isZero();
 
-        mockMvc.perform(put("/api/inventory-materials/{materialId}", materialId)
-                        .cookie(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "materialCode": "INV-RAW-001",
-                                  "materialName": "Should not change",
-                                  "materialType": "RAW_MATERIAL",
-                                  "unitOfMeasure": "roll",
-                                  "lowStockThreshold": 5.000,
-                                  "status": "ACTIVE"
-                                }
-                                """))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVENTORY_MATERIAL_ARCHIVED"));
-
-        mockMvc.perform(post("/api/inventory-materials/{materialId}/consume", materialId)
-                        .cookie(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"quantity\": 1.000}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("INVENTORY_MATERIAL_NOT_ACTIVE"));
-
-        assertThat(jdbcTemplate.queryForObject(
-                        "SELECT current_quantity FROM inventory_materials WHERE id = ?",
-                        java.math.BigDecimal.class,
-                        materialId))
-                .isEqualByComparingTo("25.000");
+        mockMvc.perform(get("/api/inventory-materials/{materialId}", materialId).cookie(session))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("INVENTORY_MATERIAL_NOT_FOUND"));
     }
 
     @Test
-    void archivedLowStockMaterialIsRemovedFromReplenishmentMonitoring() throws Exception {
+    void deletedLowStockMaterialIsRemovedFromReplenishmentMonitoring() throws Exception {
         UserAccount inventoryManager = insertUser(
                 6912, "inventory69012@example.com", UserRole.INVENTORY_MANAGER);
         Cookie session = sessionFor(inventoryManager, UserRole.INVENTORY_MANAGER);
         insertInventoryMaterial(
-                "INV-ARCHIVE-LOW", "Archived low stock", null, "FABRIC", "metre",
-                "4.000", "5.000", "ACTIVE");
+                "INV-DELETE-LOW", "Deletable low stock", null, "FABRIC", "metre",
+                "0.000", "5.000", "ACTIVE");
         long materialId = jdbcTemplate.queryForObject(
                 "SELECT id FROM inventory_materials WHERE material_code = ?",
                 Long.class,
-                "INV-ARCHIVE-LOW");
+                "INV-DELETE-LOW");
 
         mockMvc.perform(get("/api/inventory-materials/low-stock").cookie(session))
                 .andExpect(status().isOk())
@@ -689,6 +754,79 @@ class InventoryMaterialApiIntegrationTests {
         mockMvc.perform(get("/api/inventory-materials/low-stock").cookie(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(0));
+    }
+
+    @Test
+    void inventoryMaterialWithPhysicalStockCannotBeDeleted() throws Exception {
+        UserAccount manager = insertUser(6913, "inventory69013@example.com", UserRole.INVENTORY_MANAGER);
+        insertInventoryMaterial("INV-STOCK-DELETE", "Stocked fabric", null, "FABRIC", "metre",
+                "500.000", "50.000", "ACTIVE");
+        long id = jdbcTemplate.queryForObject(
+                "SELECT id FROM inventory_materials WHERE material_code = 'INV-STOCK-DELETE'", Long.class);
+
+        mockMvc.perform(delete("/api/inventory-materials/{materialId}", id)
+                        .cookie(sessionFor(manager, UserRole.INVENTORY_MANAGER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("MATERIAL_HAS_STOCK"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM inventory_materials WHERE id = ?", Integer.class, id)).isEqualTo(1);
+    }
+
+    @Test
+    void referencedMaterialReturnsConflictWithoutDestroyingProductionHistory() throws Exception {
+        UserAccount inventoryManager = insertUser(
+                6917, "inventory69017@example.com", UserRole.INVENTORY_MANAGER);
+        Cookie session = sessionFor(inventoryManager, UserRole.INVENTORY_MANAGER);
+        insertInventoryMaterial(
+                "INV-IN-USE", "Production-linked fabric", null, "FABRIC", "metre",
+                "20.000", "5.000", "ACTIVE");
+        long materialId = jdbcTemplate.queryForObject(
+                "SELECT id FROM inventory_materials WHERE material_code = ?",
+                Long.class,
+                "INV-IN-USE");
+        long orderId = 7597;
+        long taskId = 7797;
+
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO orders (id, customer_id, order_number, status) VALUES (?, ?, ?, 'IN_PRODUCTION')",
+                    orderId,
+                    inventoryManager.id(),
+                    "INV-DELETE-ORDER");
+            jdbcTemplate.update(
+                    "INSERT INTO production_tasks (id, task_number, order_id, status, started_at) VALUES (?, ?, ?, 'IN_PROGRESS', CURRENT_TIMESTAMP(6))",
+                    taskId,
+                    "INV-DELETE-TASK",
+                    orderId);
+            jdbcTemplate.update(
+                    "INSERT INTO production_task_material_requirements (production_task_id, inventory_material_id, required_quantity) VALUES (?, ?, 5.000)",
+                    taskId,
+                    materialId);
+
+            mockMvc.perform(delete("/api/inventory-materials/{materialId}", materialId)
+                            .cookie(session))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("MATERIAL_IN_USE"))
+                    .andExpect(jsonPath("$.error.message").value(
+                            "This material cannot be deleted because it is already used in existing records."));
+
+            assertThat(jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM inventory_materials WHERE id = ?",
+                            Integer.class,
+                            materialId))
+                    .isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM production_task_material_requirements WHERE production_task_id = ?",
+                            Integer.class,
+                            taskId))
+                    .isEqualTo(1);
+        } finally {
+            jdbcTemplate.update(
+                    "DELETE FROM production_task_material_requirements WHERE production_task_id = ?",
+                    taskId);
+            jdbcTemplate.update("DELETE FROM production_tasks WHERE id = ?", taskId);
+            jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
+        }
     }
 
     @Test
@@ -747,7 +885,7 @@ class InventoryMaterialApiIntegrationTests {
     }
 
     @Test
-    void availabilityReportsNotActiveAfterArchiveAndRejectsInvalidRequiredQuantity() throws Exception {
+    void availabilityReportsNotActiveForInactiveMaterialAndRejectsInvalidRequiredQuantity() throws Exception {
         UserAccount inventoryManager = insertUser(
                 6915, "inventory69015@example.com", UserRole.INVENTORY_MANAGER);
         UserAccount productionManager = insertUser(
@@ -764,8 +902,19 @@ class InventoryMaterialApiIntegrationTests {
                 Long.class,
                 "INV-RAW-001");
 
-        mockMvc.perform(delete("/api/inventory-materials/{materialId}", materialId)
-                        .cookie(inventorySession))
+        mockMvc.perform(put("/api/inventory-materials/{materialId}", materialId)
+                        .cookie(inventorySession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "materialCode": "INV-RAW-001",
+                                  "materialName": "Polyester lining",
+                                  "materialType": "RAW_MATERIAL",
+                                  "unitOfMeasure": "roll",
+                                  "lowStockThreshold": 5.000,
+                                  "status": "INACTIVE"
+                                }
+                                """))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/inventory-materials/{materialId}/availability", materialId)
@@ -925,6 +1074,7 @@ class InventoryMaterialApiIntegrationTests {
     private void cleanTestAccounts() {
         jdbcTemplate.update(
                 "DELETE FROM users WHERE email LIKE '%690%@example.com' "
+                        + "OR email LIKE '%691%@example.com' "
                         + "OR email LIKE 'inventory-ticket32-%@example.com'");
     }
 }

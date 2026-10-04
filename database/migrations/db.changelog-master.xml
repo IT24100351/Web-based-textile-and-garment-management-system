@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- Core schema and identity -->
+    <include file="changes/baseline.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-users.sql" relativeToChangelogFile="true"/>
+    <include file="changes/add-email-verification.sql" relativeToChangelogFile="true"/>
+    <include file="changes/enforce-customer-email-verification.sql" relativeToChangelogFile="true"/>
+    <include file="changes/add-user-session-version.sql" relativeToChangelogFile="true"/>
+
+    <!-- Product catalogue, suppliers, and inventory -->
+    <include file="changes/create-garment-product-catalog.sql" relativeToChangelogFile="true"/>
+    <include file="changes/add-garment-product-images.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-supplier-profiles.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-material-supplies.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-inventory-materials.sql" relativeToChangelogFile="true"/>
+    <include file="changes/remove-material-supply-discontinued-status.xml" relativeToChangelogFile="true"/>
+
+    <!-- Sales, quotations, and billing -->
+    <include file="changes/create-customer-orders.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-order-items.sql" relativeToChangelogFile="true"/>
+    <include file="changes/add-order-product-snapshots.xml" relativeToChangelogFile="true"/>
+    <include file="changes/create-order-status-history.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-customer-quotations.sql" relativeToChangelogFile="true"/>
+    <include file="changes/remove-product-discontinued-status.xml" relativeToChangelogFile="true"/>
+    <include file="changes/create-order-billing.sql" relativeToChangelogFile="true"/>
+
+    <!-- Production -->
+    <include file="changes/create-production-tasks.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-production-task-details.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-production-task-material-requirements.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-production-task-material-usage.sql" relativeToChangelogFile="true"/>
+    <include file="changes/remove-inventory-material-discontinued-status.xml" relativeToChangelogFile="true"/>
+    <include file="changes/add-production-quality-control.sql" relativeToChangelogFile="true"/>
+
+    <!-- Delivery -->
+    <include file="changes/create-deliveries.sql" relativeToChangelogFile="true"/>
+    <include file="changes/enable-safe-delivery-cancellation.xml" relativeToChangelogFile="true"/>
+
+    <!-- Account recovery and notifications -->
+    <include file="changes/create-password-reset-tokens.sql" relativeToChangelogFile="true"/>
+    <include file="changes/create-notifications.sql" relativeToChangelogFile="true"/>
+</databaseChangeLog>

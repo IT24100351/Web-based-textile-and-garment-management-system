@@ -1,7 +1,6 @@
 package lk.ac.sliit.tgms.product;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,6 +17,7 @@ import lk.ac.sliit.tgms.auth.AuthTokenService;
 import lk.ac.sliit.tgms.auth.UserAccount;
 import lk.ac.sliit.tgms.auth.UserRole;
 import org.hamcrest.Matchers;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +52,15 @@ class ProductApiIntegrationTests {
         jdbcTemplate.update("DELETE FROM garment_products");
         jdbcTemplate.update("DELETE FROM garment_categories");
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
+
+    @AfterEach
+    void tearDownHistoryFixtures() {
+        jdbcTemplate.update("DELETE FROM quotation_items WHERE quotation_id BETWEEN 9601 AND 9699");
+        jdbcTemplate.update("DELETE FROM quotations WHERE id BETWEEN 9601 AND 9699");
+        jdbcTemplate.update("DELETE FROM order_items WHERE order_id BETWEEN 9501 AND 9599");
+        jdbcTemplate.update("DELETE FROM orders WHERE id BETWEEN 9501 AND 9599");
+        jdbcTemplate.update("DELETE FROM users WHERE id BETWEEN 9901 AND 9999");
     }
 
     @Test
@@ -302,7 +311,7 @@ class ProductApiIntegrationTests {
 
         insertProduct(2101, 1101, "Classic Tee", ProductStatus.ACTIVE);
         insertProduct(2102, 1101, "Hidden Tee", ProductStatus.INACTIVE);
-        insertProduct(2103, 1101, "Old Tee", ProductStatus.DISCONTINUED);
+        insertProduct(2103, 1101, "Hidden Legacy Equivalent", ProductStatus.INACTIVE);
         insertProduct(2104, 1102, "Archived Category Tee", ProductStatus.ACTIVE);
         insertProduct(2105, 1101, "Out of Stock Tee", ProductStatus.ACTIVE);
 
@@ -312,7 +321,7 @@ class ProductApiIntegrationTests {
         insertVariant(3104, 2102, "M", "Black", "1999.00", VariantStatus.AVAILABLE);
         insertVariant(3105, 2103, "M", "Grey", "1899.00", VariantStatus.AVAILABLE);
         insertVariant(3106, 2104, "M", "White", "1799.00", VariantStatus.AVAILABLE);
-        insertVariant(3107, 2105, "M", "Green", "1699.00", VariantStatus.DISCONTINUED);
+        insertVariant(3107, 2105, "M", "Green", "1699.00", VariantStatus.UNAVAILABLE);
 
         mockMvc.perform(get("/api/products"))
                 .andExpect(status().isOk())
@@ -377,8 +386,10 @@ class ProductApiIntegrationTests {
                 .andExpect(jsonPath("$[0].variants[0].id").value(3201));
 
         mockMvc.perform(get("/api/products").param("availability", "UNAVAILABLE"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.error.fields.availability")
+                        .value("The public catalogue only contains AVAILABLE variants."));
 
         mockMvc.perform(get("/api/products"))
                 .andExpect(status().isOk())
@@ -486,6 +497,7 @@ class ProductApiIntegrationTests {
                 .andExpect(jsonPath("$.product.id").value(2401))
                 .andExpect(jsonPath("$.product.category.id").value(1402))
                 .andExpect(jsonPath("$.product.name").value("Updated Oxford Shirt"))
+                .andExpect(jsonPath("$.product.status").value("INACTIVE"))
                 .andExpect(jsonPath("$.product.variants[0].id").value(3401))
                 .andExpect(jsonPath("$.product.variants[0].productId").value(2401))
                 .andExpect(jsonPath("$.product.variants[0].size").value("XL"))
@@ -500,6 +512,11 @@ class ProductApiIntegrationTests {
                         Long.class,
                         "Updated Oxford Shirt"))
                 .isEqualTo(2401L);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT status FROM garment_products WHERE id = ?",
+                        String.class,
+                        2401))
+                .isEqualTo("INACTIVE");
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT product_id FROM garment_product_variants WHERE id = ?",
                         Long.class,
@@ -577,7 +594,7 @@ class ProductApiIntegrationTests {
     }
 
     @Test
-    void discontinuationPreservesHistoryAndBlocksNewOrderSelection() throws Exception {
+    void salesOfficerDeletesUnusedProductPermanently() throws Exception {
         insertCategory(1501, "Workwear", CategoryStatus.ACTIVE);
         insertProduct(2501, 1501, "Utility Shirt", ProductStatus.ACTIVE);
         insertVariant(3501, 2501, "M", "Stone", "4590.00", VariantStatus.AVAILABLE);
@@ -586,57 +603,125 @@ class ProductApiIntegrationTests {
         OrderProductSelection selection = productService.requireOrderSelectableVariant(2501, 3501);
         assertThat(selection.productId()).isEqualTo(2501);
         assertThat(selection.variantId()).isEqualTo(3501);
-        assertThat(selection.productName()).isEqualTo("Utility Shirt");
-        assertThat(selection.categoryId()).isEqualTo(1501);
-        assertThat(selection.categoryName()).isEqualTo("Workwear");
-        assertThat(selection.size()).isEqualTo("M");
-        assertThat(selection.color()).isEqualTo("Stone");
-        assertThat(selection.currentPrice()).isEqualByComparingTo("4590.00");
-        assertThat(selection.availability()).isEqualTo(VariantStatus.AVAILABLE);
 
         Cookie salesOfficer = sessionFor(UserRole.SALES_OFFICER);
         mockMvc.perform(delete("/api/products/2501").cookie(salesOfficer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message")
-                        .value("Garment product discontinued successfully."))
-                .andExpect(jsonPath("$.product.id").value(2501))
-                .andExpect(jsonPath("$.product.status").value("DISCONTINUED"))
-                .andExpect(jsonPath("$.product.variants.length()").value(2))
-                .andExpect(jsonPath("$.product.variants[*].status")
-                        .value(Matchers.everyItem(Matchers.is("DISCONTINUED"))));
+                .andExpect(jsonPath("$.message").value("Garment product deleted successfully."))
+                .andExpect(jsonPath("$.productId").value(2501));
 
         assertThat(jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM garment_products WHERE id = ?",
-                        Integer.class,
-                        2501))
-                .isEqualTo(1);
+                        "SELECT COUNT(*) FROM garment_products WHERE id = ?", Integer.class, 2501))
+                .isZero();
         assertThat(jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM garment_product_variants WHERE product_id = ?",
-                        Integer.class,
-                        2501))
-                .isEqualTo(2);
-        assertThatThrownBy(() -> productService.requireOrderSelectableVariant(2501, 3501))
-                .isInstanceOf(ProductNotSelectableException.class)
-                .hasMessage("The selected product variant is not available for a new order.");
+                        "SELECT COUNT(*) FROM garment_product_variants WHERE product_id = ?", Integer.class, 2501))
+                .isZero();
 
-        mockMvc.perform(get("/api/products"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
-        mockMvc.perform(get("/api/products/catalog/2501"))
+        mockMvc.perform(get("/api/products/2501").cookie(salesOfficer))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("PRODUCT_NOT_FOUND"));
-        mockMvc.perform(get("/api/products/2501").cookie(salesOfficer))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DISCONTINUED"));
-
-        mockMvc.perform(delete("/api/products/2501").cookie(salesOfficer))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.product.id").value(2501))
-                .andExpect(jsonPath("$.product.status").value("DISCONTINUED"));
     }
 
     @Test
-    void discontinuationValidatesProductIdAndMissingProduct() throws Exception {
+    void productReferencedByOrderReturnsConflictAndPreservesOrderHistory() throws Exception {
+        insertCategory(1502, "Order History", CategoryStatus.ACTIVE);
+        insertProduct(2502, 1502, "Ordered Shirt", ProductStatus.ACTIVE);
+        insertVariant(3503, 2502, "M", "Navy", "4590.00", VariantStatus.AVAILABLE);
+        insertHistoryUser(9901, "product-order-customer@example.com", UserRole.CUSTOMER);
+        jdbcTemplate.update(
+                "INSERT INTO orders (id, customer_id, order_number, status) VALUES (?, ?, ?, ?)",
+                9501, 9901, "ORD-PRODUCT-DELETE", "PENDING");
+        jdbcTemplate.update(
+                """
+                INSERT INTO order_items
+                    (id, order_id, product_id, variant_id, quantity, selected_size, selected_color,
+                     unit_price_snapshot, product_name_snapshot, product_image_url_snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                9551, 9501, 2502, 3503, 1, "M", "Navy", new BigDecimal("4590.00"),
+                "Ordered Shirt", null);
+
+        mockMvc.perform(delete("/api/products/2502").cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("PRODUCT_IN_USE"))
+                .andExpect(jsonPath("$.error.message")
+                        .value("This product cannot be deleted because it is already used by existing orders or quotations."));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM garment_products WHERE id = 2502", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders WHERE id = 9501", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_items WHERE id = 9551", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void productReferencedByQuotationReturnsConflictAndPreservesQuotationHistory() throws Exception {
+        insertCategory(1503, "Quotation History", CategoryStatus.ACTIVE);
+        insertProduct(2503, 1503, "Quoted Shirt", ProductStatus.ACTIVE);
+        insertVariant(3504, 2503, "L", "White", "4790.00", VariantStatus.AVAILABLE);
+        insertHistoryUser(9902, "product-quote-customer@example.com", UserRole.CUSTOMER);
+        insertHistoryUser(9903, "product-quote-sales@example.com", UserRole.SALES_OFFICER);
+        jdbcTemplate.update(
+                "INSERT INTO quotations (id, quotation_number, customer_id, issued_by_user_id) VALUES (?, ?, ?, ?)",
+                9601, "QUO-PRODUCT-DELETE", 9902, 9903);
+        jdbcTemplate.update(
+                """
+                INSERT INTO quotation_items
+                    (id, quotation_id, product_id, variant_id, product_name_snapshot, quantity,
+                     selected_size, selected_color, unit_price_snapshot)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                9651, 9601, 2503, 3504, "Quoted Shirt", 2, "L", "White", new BigDecimal("4790.00"));
+
+        mockMvc.perform(delete("/api/products/2503").cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("PRODUCT_IN_USE"));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM garment_products WHERE id = 2503", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quotations WHERE id = 9601", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quotation_items WHERE id = 9651", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void salesOfficerManagementCatalogIncludesInactiveProductsAndUnavailableVariants() throws Exception {
+        insertCategory(2451, "Management Wear", CategoryStatus.ACTIVE);
+        insertProduct(2551, 2451, "Visible Management Product", ProductStatus.ACTIVE);
+        insertProduct(2552, 2451, "Hidden Management Product", ProductStatus.INACTIVE);
+        insertVariant(3551, 2551, "M", "Blue", "1990.00", VariantStatus.AVAILABLE);
+        insertVariant(3552, 2551, "L", "Blue", "2090.00", VariantStatus.UNAVAILABLE);
+        insertVariant(3553, 2552, "M", "Black", "2190.00", VariantStatus.UNAVAILABLE);
+
+        Cookie salesOfficer = sessionFor(UserRole.SALES_OFFICER);
+        mockMvc.perform(get("/api/products/manage").cookie(salesOfficer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(2552))
+                .andExpect(jsonPath("$[0].status").value("INACTIVE"))
+                .andExpect(jsonPath("$[0].variants[0].status").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$[1].id").value(2551))
+                .andExpect(jsonPath("$[1].variants[0].status").value("AVAILABLE"))
+                .andExpect(jsonPath("$[1].variants[1].status").value("UNAVAILABLE"));
+
+        mockMvc.perform(get("/api/products/manage")
+                        .param("search", "hidden")
+                        .param("status", "INACTIVE")
+                        .cookie(salesOfficer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(2552));
+
+        mockMvc.perform(get("/api/products/manage").cookie(sessionFor(UserRole.CUSTOMER)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/products/manage"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void deleteValidatesProductIdMissingProductAndRemovedDiscontinuedStatus() throws Exception {
         Cookie salesOfficer = sessionFor(UserRole.SALES_OFFICER);
 
         mockMvc.perform(delete("/api/products/0").cookie(salesOfficer))
@@ -649,6 +734,9 @@ class ProductApiIntegrationTests {
         mockMvc.perform(delete("/api/products/999999").cookie(salesOfficer))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("PRODUCT_NOT_FOUND"));
+        mockMvc.perform(get("/api/products").param("availability", "DISCONTINUED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     }
 
     private Cookie sessionFor(UserRole role) {
@@ -698,6 +786,15 @@ class ProductApiIntegrationTests {
                 status.name());
     }
 
+    private void insertHistoryUser(long id, String email, UserRole role) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO users (id, email, password_hash, full_name, role, is_active)
+                VALUES (?, ?, ?, ?, ?, TRUE)
+                """,
+                id, email, "not-used", "Product History Fixture", role.name());
+    }
+
     private String validProduct(String category) {
         return """
                 {
@@ -721,7 +818,8 @@ class ProductApiIntegrationTests {
                   "size": " XL ",
                   "color": " Ivory ",
                   "price": "4290.50",
-                  "availability": "AVAILABLE"
+                  "availability": "AVAILABLE",
+                  "status": "INACTIVE"
                 }
                 """.formatted(variantId, category);
     }

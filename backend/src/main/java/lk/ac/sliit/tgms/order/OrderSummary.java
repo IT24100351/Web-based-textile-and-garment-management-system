@@ -13,4 +13,6 @@ public record OrderSummary(
         Instant createdAt,
         Instant updatedAt,
         int itemCount,
+        String previewProductName,
+        String previewProductImageUrl,
         BigDecimal totalAmount) {}

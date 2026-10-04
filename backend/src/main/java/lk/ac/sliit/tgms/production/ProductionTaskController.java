@@ -16,6 +16,8 @@ import lk.ac.sliit.tgms.order.OrderStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -72,6 +74,13 @@ public class ProductionTaskController {
     @ProductionTaskManageable
     public ProductionTaskDetailResponse detail(@PathVariable long taskId) {
         return ProductionTaskDetailResponse.from(productionTaskService.getTaskDetail(taskId));
+    }
+
+    @DeleteMapping("/{taskId}")
+    @ProductionManagerOnly
+    public ResponseEntity<Void> delete(@PathVariable long taskId) {
+        productionTaskService.deletePendingTask(taskId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{taskId}/material-availability")
@@ -440,12 +449,15 @@ public class ProductionTaskController {
             long orderItemId,
             long productId,
             long variantId,
+            String productName,
+            String productImageUrl,
             int quantity,
             String selectedSize,
             String selectedColor) {
         static EligibleOrderItemResponse from(OrderHandoffItem item) {
             return new EligibleOrderItemResponse(
-                    item.orderItemId(), item.productId(), item.variantId(), item.quantity(),
+                    item.orderItemId(), item.productId(), item.variantId(),
+                    item.productName(), item.productImageUrl(), item.quantity(),
                     item.selectedSize(), item.selectedColor());
         }
     }

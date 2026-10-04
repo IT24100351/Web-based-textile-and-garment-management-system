@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -15,8 +14,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
 
-    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER =
-            (resultSet, rowNumber) -> mapSupply(resultSet);
+    private static final RowMapper<MaterialSupply> SUPPLY_MAPPER = (resultSet, rowNumber) ->
+            mapSupply(resultSet);
 
     private static final RowMapper<MaterialSupplyListItem> LIST_ITEM_MAPPER =
             (resultSet, rowNumber) -> new MaterialSupplyListItem(
@@ -46,9 +45,6 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * Creates a new material supply record in the database.
-     */
     @Override
     public long create(
             long supplierId,
@@ -60,10 +56,6 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             BigDecimal unitPrice,
             int deliveryLeadTimeDays,
             String deliveryNotes) {
-
-        if (deliveryLeadTimeDays < 0) {
-            throw new IllegalArgumentException("Delivery lead time cannot be negative.");
-        }
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(
                 connection -> {
@@ -90,9 +82,6 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 keyHolder);
         return generatedId(keyHolder);
     }
-    /**
-     * Retrieves a material supply by its ID.
-     */
 
     @Override
     public Optional<MaterialSupply> findById(long supplyId) {
@@ -110,9 +99,6 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
                 .stream()
                 .findFirst();
     }
-    /**
-     * Updates the details of an existing material supply.
-     */
 
     @Override
     public int updateDetails(
@@ -121,39 +107,46 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             BigDecimal quantity,
             BigDecimal unitPrice,
             int deliveryLeadTimeDays,
-            String deliveryNotes) {
+            String deliveryNotes,
+            MaterialSupplyStatus status) {
         return jdbcTemplate.update(
                 """
                 UPDATE material_supplies
                 SET quantity = ?, unit_price = ?, delivery_lead_time_days = ?,
-                    delivery_notes = ?, updated_at = CURRENT_TIMESTAMP(6)
+                    delivery_notes = ?, status = ?, updated_at = CURRENT_TIMESTAMP(6)
                 WHERE id = ? AND supplier_id = ?
                 """,
                 quantity,
                 unitPrice,
                 deliveryLeadTimeDays,
                 deliveryNotes,
+                status.name(),
                 supplyId,
                 supplierId);
     }
-    /**
-     * Marks a material supply as discontinued instead of deleting it.
-     */
 
     @Override
-    public int archive(long supplyId, long supplierId) {
-        return jdbcTemplate.update(
+    public boolean isReferencedByInventory(long supplyId) {
+        Boolean referenced = jdbcTemplate.queryForObject(
                 """
-                UPDATE material_supplies
-                SET status = 'DISCONTINUED', updated_at = CURRENT_TIMESTAMP(6)
-                WHERE id = ? AND supplier_id = ? AND status <> 'DISCONTINUED'
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM inventory_materials
+                    WHERE source_material_supply_id = ?
+                ) THEN TRUE ELSE FALSE END
                 """,
+                Boolean.class,
+                supplyId);
+        return Boolean.TRUE.equals(referenced);
+    }
+
+    @Override
+    public int deleteByIdAndSupplierId(long supplyId, long supplierId) {
+        return jdbcTemplate.update(
+                "DELETE FROM material_supplies WHERE id = ? AND supplier_id = ?",
                 supplyId,
                 supplierId);
     }
-    /**
-     * Retrieves material supplies with optional filtering and search criteria.
-     */
 
     @Override
     public List<MaterialSupplyListItem> findAll(MaterialSupplyQuery filter) {
@@ -173,14 +166,14 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
             query.append(" AND ms.supplier_id = ?");
             parameters.add(filter.supplierId());
         }
-        if (filter.search() != null && !filter.search().isBlank()) {
+        if (filter.search() != null) {
             query.append("""
-         AND (LOWER(ms.material_code) LIKE ?
-              OR LOWER(ms.material_name) LIKE ?
-              OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
-              OR LOWER(ms.unit_of_measure) LIKE ?
-              OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
-        """);
+                     AND (LOWER(ms.material_code) LIKE ?
+                          OR LOWER(ms.material_name) LIKE ?
+                          OR LOWER(COALESCE(ms.material_description, '')) LIKE ?
+                          OR LOWER(ms.unit_of_measure) LIKE ?
+                          OR LOWER(COALESCE(ms.delivery_notes, '')) LIKE ?)
+                    """);
             String searchPattern = "%" + escapeLike(filter.search().toLowerCase()) + "%";
             for (int index = 0; index < 5; index++) {
                 parameters.add(searchPattern);
@@ -199,18 +192,10 @@ public class JdbcMaterialSupplyRepository implements MaterialSupplyRepository {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private long generatedId(KeyHolder keyHolder) {
-        Map<String, Object> keys = keyHolder.getKeys();
-        if (keys != null) {
-            return keys.entrySet().stream()
-                    .filter(entry -> entry.getKey().equalsIgnoreCase("id"))
-                    .map(Map.Entry::getValue)
-                    .filter(Number.class::isInstance)
-                    .map(Number.class::cast)
-                    .findFirst()
-                    .map(Number::longValue)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Database did not return a material supply ID."));
+    static long generatedId(KeyHolder keyHolder) {
+        Number key = keyHolder.getKey();
+        if (key != null) {
+            return key.longValue();
         }
         throw new IllegalStateException("Database did not return a material supply ID.");
     }

@@ -25,9 +25,12 @@ public interface MaterialSupplyRepository {
             BigDecimal quantity,
             BigDecimal unitPrice,
             int deliveryLeadTimeDays,
-            String deliveryNotes);
+            String deliveryNotes,
+            MaterialSupplyStatus status);
 
-    int archive(long supplyId, long supplierId);
+    boolean isReferencedByInventory(long supplyId);
+
+    int deleteByIdAndSupplierId(long supplyId, long supplierId);
 
     List<MaterialSupplyListItem> findAll(MaterialSupplyQuery query);
 }

@@ -81,7 +81,7 @@ export function CustomerPlaceOrderPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      setProducts(await getCatalogProducts({ availability: "AVAILABLE" }, signal));
+      setProducts(await getCatalogProducts({}, signal));
     } catch (error: unknown) {
       if (signal?.aborted) return;
       setLoadError(getProductApiError(

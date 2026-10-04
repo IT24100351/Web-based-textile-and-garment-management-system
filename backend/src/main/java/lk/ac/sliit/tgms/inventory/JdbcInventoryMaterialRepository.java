@@ -6,7 +6,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -163,7 +162,6 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                     status = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-                  AND status <> 'DISCONTINUED'
                 """,
                 materialCode,
                 materialName,
@@ -176,15 +174,46 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
     }
 
     @Override
-    public int archive(long materialId) {
+    public boolean isReferenced(long materialId) {
+        Boolean referenced = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN
+                    EXISTS (
+                        SELECT 1
+                        FROM production_task_material_requirements
+                        WHERE inventory_material_id = ?
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM production_task_material_usage
+                        WHERE inventory_material_id = ?
+                    )
+                THEN TRUE ELSE FALSE END
+                """,
+                Boolean.class,
+                materialId,
+                materialId);
+        return Boolean.TRUE.equals(referenced);
+    }
+
+    @Override
+    public int deleteById(long materialId) {
+        return jdbcTemplate.update(
+                "DELETE FROM inventory_materials WHERE id = ? AND current_quantity = 0",
+                materialId);
+    }
+
+    @Override
+    public int receiveStockIfActive(long materialId, BigDecimal quantity) {
         return jdbcTemplate.update(
                 """
                 UPDATE inventory_materials
-                SET status = 'DISCONTINUED',
+                SET current_quantity = current_quantity + ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-                  AND status <> 'DISCONTINUED'
+                  AND status = 'ACTIVE'
                 """,
+                quantity,
                 materialId);
     }
 
@@ -224,18 +253,10 @@ public class JdbcInventoryMaterialRepository implements InventoryMaterialReposit
                 resultSet.getTimestamp("updated_at").toInstant());
     }
 
-    private long generatedId(KeyHolder keyHolder) {
-        Map<String, Object> keys = keyHolder.getKeys();
-        if (keys != null) {
-            return keys.entrySet().stream()
-                    .filter(entry -> entry.getKey().equalsIgnoreCase("id"))
-                    .map(Map.Entry::getValue)
-                    .filter(Number.class::isInstance)
-                    .map(Number.class::cast)
-                    .findFirst()
-                    .map(Number::longValue)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Database did not return an inventory material ID."));
+    static long generatedId(KeyHolder keyHolder) {
+        Number key = keyHolder.getKey();
+        if (key != null) {
+            return key.longValue();
         }
         throw new IllegalStateException("Database did not return an inventory material ID.");
     }

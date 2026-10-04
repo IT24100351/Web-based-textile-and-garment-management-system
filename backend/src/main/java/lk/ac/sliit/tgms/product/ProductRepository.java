@@ -25,7 +25,8 @@ public interface ProductRepository {
             long categoryId,
             String productName,
             String description,
-            String imageUrl);
+            String imageUrl,
+            ProductStatus status);
 
     int updateVariant(
             long productId,
@@ -35,15 +36,23 @@ public interface ProductRepository {
             BigDecimal price,
             VariantStatus status);
 
-    int discontinueProduct(long productId);
+    boolean isHistoricallyReferenced(long productId);
 
-    int discontinueVariants(long productId);
+    int deleteVariants(long productId);
+
+    int deleteProduct(long productId);
+
+    boolean isImageUrlReferenced(String imageUrl);
+
+    boolean isImageUrlReferencedElsewhere(String imageUrl, long productId);
 
     Optional<GarmentProductDetails> findProductById(long productId);
 
     Optional<GarmentProductDetails> findPublicCatalogProductById(long productId);
 
     List<GarmentProductDetails> findPublicCatalog(ProductCatalogFilter filter);
+
+    List<GarmentProductDetails> findManagementCatalog(ProductManagementFilter filter);
 
     default List<GarmentProductDetails> findPublicCatalog() {
         return findPublicCatalog(ProductCatalogFilter.empty());

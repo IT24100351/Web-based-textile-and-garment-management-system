@@ -73,6 +73,7 @@ class CustomerOrderItemSchemaTests {
             assertThat(first.orderId()).isEqualTo(orderId);
             assertThat(first.productId()).isEqualTo(shirt.productId());
             assertThat(first.variantId()).isEqualTo(shirt.variantId());
+            assertThat(first.productNameSnapshot()).isEqualTo("Order product snapshot");
             assertThat(first.quantity()).isEqualTo(2);
             assertThat(first.selectedSize()).isEqualTo("M");
             assertThat(first.selectedColor()).isEqualTo("Blue");
@@ -379,12 +380,14 @@ class CustomerOrderItemSchemaTests {
                     order_id,
                     product_id,
                     variant_id,
+                    product_name_snapshot,
+                    product_image_url_snapshot,
                     quantity,
                     selected_size,
                     selected_color,
                     unit_price_snapshot
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'Order product snapshot', NULL, ?, ?, ?, ?)
                 """,
                 Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, orderId);
@@ -423,6 +426,8 @@ class CustomerOrderItemSchemaTests {
                 SELECT order_id,
                        product_id,
                        variant_id,
+                       product_name_snapshot,
+                       product_image_url_snapshot,
                        quantity,
                        selected_size,
                        selected_color,
@@ -441,6 +446,8 @@ class CustomerOrderItemSchemaTests {
                         resultSet.getLong("order_id"),
                         resultSet.getLong("product_id"),
                         resultSet.getLong("variant_id"),
+                        resultSet.getString("product_name_snapshot"),
+                        resultSet.getString("product_image_url_snapshot"),
                         resultSet.getInt("quantity"),
                         resultSet.getString("selected_size"),
                         resultSet.getString("selected_color"),
@@ -471,6 +478,8 @@ class CustomerOrderItemSchemaTests {
             long orderId,
             long productId,
             long variantId,
+            String productNameSnapshot,
+            String productImageUrlSnapshot,
             int quantity,
             String selectedSize,
             String selectedColor,

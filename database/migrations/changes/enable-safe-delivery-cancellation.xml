@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        logicalFilePath="db/changelog/changes/20260826073000_enable_safe_delivery_cancellation.xml"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260826072900-index-delivery-order-foreign-key" author="tgms" dbms="mysql">
+        <preConditions onFail="MARK_RAN">
+            <indexExists
+                    tableName="deliveries"
+                    indexName="uq_deliveries_order_id"/>
+            <not>
+                <indexExists
+                        tableName="deliveries"
+                        indexName="idx_deliveries_order_id"/>
+            </not>
+        </preConditions>
+
+        <comment>
+            Keep the Delivery order foreign key supported while its original unique index is removed.
+        </comment>
+
+        <createIndex tableName="deliveries" indexName="idx_deliveries_order_id">
+            <column name="order_id"/>
+        </createIndex>
+
+        <rollback>
+            <dropIndex tableName="deliveries" indexName="idx_deliveries_order_id"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="20260826073000-enable-safe-delivery-cancellation" author="tgms">
+        <comment>
+            Preserve cancelled Delivery history while allowing one replacement active Delivery for the same Order.
+        </comment>
+
+        <dropUniqueConstraint
+                tableName="deliveries"
+                constraintName="uq_deliveries_order_id"/>
+
+        <addColumn tableName="deliveries">
+            <column name="active_order_lock_id" type="BIGINT"/>
+        </addColumn>
+
+        <update tableName="deliveries">
+            <column name="active_order_lock_id" valueComputed="order_id"/>
+            <where>status &lt;&gt; 'CANCELLED'</where>
+        </update>
+
+        <addForeignKeyConstraint
+                baseTableName="deliveries"
+                baseColumnNames="active_order_lock_id"
+                referencedTableName="orders"
+                referencedColumnNames="id"
+                constraintName="fk_deliveries_active_order_lock_id"
+                onUpdate="RESTRICT"
+                onDelete="RESTRICT"/>
+
+        <addUniqueConstraint
+                tableName="deliveries"
+                columnNames="active_order_lock_id"
+                constraintName="uq_deliveries_active_order_lock_id"/>
+
+        <sql>
+            ALTER TABLE deliveries
+            ADD CONSTRAINT ck_deliveries_active_order_lock
+            CHECK (
+                (status = 'CANCELLED' AND active_order_lock_id IS NULL)
+                OR
+                (status &lt;&gt; 'CANCELLED' AND active_order_lock_id = order_id)
+            )
+        </sql>
+
+        <rollback>
+            <sql dbms="mysql">
+                ALTER TABLE deliveries DROP CHECK ck_deliveries_active_order_lock
+            </sql>
+            <sql dbms="h2">
+                ALTER TABLE deliveries DROP CONSTRAINT ck_deliveries_active_order_lock
+            </sql>
+            <dropUniqueConstraint
+                    tableName="deliveries"
+                    constraintName="uq_deliveries_active_order_lock_id"/>
+            <dropForeignKeyConstraint
+                    baseTableName="deliveries"
+                    constraintName="fk_deliveries_active_order_lock_id"/>
+            <dropColumn tableName="deliveries" columnName="active_order_lock_id"/>
+            <addUniqueConstraint
+                    tableName="deliveries"
+                    columnNames="order_id"
+                    constraintName="uq_deliveries_order_id"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

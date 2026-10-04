@@ -14,19 +14,17 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    // Constructor injection of JdbcTemplate
     public JdbcProductionTaskRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // Create a new production task and return it
     @Override
     public ProductionTask createTask(long orderId, String taskNumber) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement(
                     "INSERT INTO production_tasks (task_number, order_id) VALUES (?, ?)",
-                    new String[] {"id"}); // Return generated ID
+                    new String[] {"id"});
             statement.setString(1, taskNumber);
             statement.setLong(2, orderId);
             return statement;
@@ -37,12 +35,10 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
             throw new IllegalStateException("Production task insert did not return a generated ID.");
         }
 
-        // Reload the created task from DB
         return findById(key.longValue())
                 .orElseThrow(() -> new IllegalStateException("Created production task could not be reloaded."));
     }
 
-    // Start a pending task (set status to IN_PROGRESS)
     @Override
     public int startPendingTask(long taskId) {
         return jdbcTemplate.update(
@@ -57,7 +53,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                 taskId);
     }
 
-    // Complete an in-progress task (set status to COMPLETED)
     @Override
     public int completeInProgressTask(long taskId) {
         return jdbcTemplate.update(
@@ -72,7 +67,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                 taskId);
     }
 
-    // Count incomplete tasks for a given order
     @Override
     public long countIncompleteTasksForOrder(long orderId) {
         Long count = jdbcTemplate.queryForObject(
@@ -82,19 +76,16 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
         return count == null ? 0L : count;
     }
 
-    // Find task by ID (normal read)
     @Override
     public Optional<ProductionTask> findById(long taskId) {
         return findTask(taskId, false);
     }
 
-    // Find task by ID with FOR UPDATE (locking row)
     @Override
     public Optional<ProductionTask> findByIdForUpdate(long taskId) {
         return findTask(taskId, true);
     }
 
-    // Internal method to query a task with optional row lock
     private Optional<ProductionTask> findTask(long taskId, boolean forUpdate) {
         String sql = """
                 SELECT id, task_number, order_id, status,
@@ -125,7 +116,7 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
         return tasks.stream().findFirst();
     }
 
-    // Find tasks based on view type (ACTIVE, COMPLETED, ALL)
+
     @Override
     public List<ProductionTask> findRecords(ProductionTaskRecordView view) {
         String predicate = switch (view) {
@@ -158,7 +149,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                                 ? null : resultSet.getTimestamp("quality_checked_at").toInstant()));
     }
 
-    // Update quality control result for a task
     @Override
     public int updateQualityControl(
             long taskId,
@@ -177,7 +167,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                 result.name(), checkedByUserId, taskId);
     }
 
-    // Find work details for a task
     @Override
     public Optional<ProductionTaskWorkDetails> findWorkDetails(long taskId) {
         List<ProductionTaskWorkDetails> details = jdbcTemplate.query(
@@ -198,7 +187,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
         return details.stream().findFirst();
     }
 
-    // Save or update work details for a task
     @Override
     public ProductionTaskWorkDetails saveWorkDetails(
             long taskId,
@@ -216,7 +204,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                 """,
                 workDetails, workAssignment, workNotes, taskId);
 
-        // If no record updated, insert new details
         if (updated == 0) {
             jdbcTemplate.update(
                     """
@@ -230,8 +217,6 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
         return findWorkDetails(taskId)
                 .orElseThrow(() -> new IllegalStateException("Saved production task details could not be reloaded."));
     }
-
-    // Find material requirements for a task
     @Override
     public List<ProductionTaskMaterialRequirement> findMaterialRequirements(long taskId) {
         return jdbcTemplate.query(
@@ -251,5 +236,96 @@ public class JdbcProductionTaskRepository implements ProductionTaskRepository {
                 taskId);
     }
 
-    // Replace material requirements for a task
     @Override
+    public void replaceMaterialRequirements(
+            long taskId,
+            List<ProductionTaskMaterialRequirementCommand> requirements) {
+        jdbcTemplate.update(
+                "DELETE FROM production_task_material_requirements WHERE production_task_id = ?",
+                taskId);
+        for (ProductionTaskMaterialRequirementCommand requirement : requirements) {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO production_task_material_requirements (
+                        production_task_id, inventory_material_id, required_quantity
+                    ) VALUES (?, ?, ?)
+                    """,
+                    taskId, requirement.inventoryMaterialId(), requirement.requiredQuantity());
+        }
+    }
+
+    @Override
+    public List<ProductionTaskMaterialUsage> findMaterialUsage(long taskId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, production_task_id, inventory_material_id, quantity_used,
+                       recorded_by_user_id, recorded_at
+                FROM production_task_material_usage
+                WHERE production_task_id = ?
+                ORDER BY inventory_material_id
+                """,
+                (resultSet, rowNumber) -> new ProductionTaskMaterialUsage(
+                        resultSet.getLong("id"),
+                        resultSet.getLong("production_task_id"),
+                        resultSet.getLong("inventory_material_id"),
+                        resultSet.getBigDecimal("quantity_used"),
+                        resultSet.getLong("recorded_by_user_id"),
+                        resultSet.getTimestamp("recorded_at").toInstant()),
+                taskId);
+    }
+
+    @Override
+    public void deleteMaterialRequirements(long taskId) {
+        jdbcTemplate.update("DELETE FROM production_task_material_requirements WHERE production_task_id = ?", taskId);
+    }
+
+    @Override
+    public void deleteWorkDetails(long taskId) {
+        jdbcTemplate.update("DELETE FROM production_task_details WHERE production_task_id = ?", taskId);
+    }
+
+    @Override
+    public int deletePending(long taskId) {
+        return jdbcTemplate.update("""
+                DELETE FROM production_tasks
+                WHERE id = ? AND status = 'PENDING'
+                  AND started_at IS NULL AND completed_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM production_task_material_usage WHERE production_task_id = ?)
+                  AND EXISTS (SELECT 1 FROM orders WHERE orders.id = production_tasks.order_id
+                              AND orders.status = 'CONFIRMED')
+                """, taskId, taskId);
+    }
+
+    @Override
+    public ProductionTaskMaterialUsage createMaterialUsage(
+            long taskId,
+            long inventoryMaterialId,
+            BigDecimal quantityUsed,
+            long recordedByUserId) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement statement = connection.prepareStatement(
+                    """
+                    INSERT INTO production_task_material_usage (
+                        production_task_id, inventory_material_id, quantity_used, recorded_by_user_id
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    new String[] {"id"});
+            statement.setLong(1, taskId);
+            statement.setLong(2, inventoryMaterialId);
+            statement.setBigDecimal(3, quantityUsed);
+            statement.setLong(4, recordedByUserId);
+            return statement;
+        }, keyHolder);
+
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("Production material usage insert did not return a generated ID.");
+        }
+        return findMaterialUsage(taskId).stream()
+                .filter(usage -> usage.id() == key.longValue())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Recorded production material usage could not be reloaded."));
+    }
+
+}

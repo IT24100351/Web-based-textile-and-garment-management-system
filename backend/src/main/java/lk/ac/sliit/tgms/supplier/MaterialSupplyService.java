@@ -8,6 +8,7 @@ import java.util.Map;
 import lk.ac.sliit.tgms.auth.AuthService;
 import lk.ac.sliit.tgms.auth.UserAccount;
 import lk.ac.sliit.tgms.auth.UserRole;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -124,12 +125,10 @@ public class MaterialSupplyService {
             BigDecimal quantity,
             BigDecimal unitPrice,
             Integer deliveryLeadTimeDays,
-            String deliveryNotes) {
+            String deliveryNotes,
+            MaterialSupplyStatus status) {
         SupplierProfile supplier = requireSupplierProfile(userId);
-        MaterialSupply currentSupply = requireOwnedSupply(supplyId, supplier.id());
-        if (currentSupply.status() == MaterialSupplyStatus.DISCONTINUED) {
-            throw new MaterialSupplyArchivedException();
-        }
+        requireOwnedSupply(supplyId, supplier.id());
         String normalizedDeliveryNotes = normalizeOptionalText(deliveryNotes);
         Map<String, String> fields = new LinkedHashMap<>();
         validateDetails(
@@ -138,6 +137,9 @@ public class MaterialSupplyService {
                 unitPrice,
                 deliveryLeadTimeDays,
                 normalizedDeliveryNotes);
+        if (status == null) {
+            fields.put("status", "Status is required.");
+        }
         if (!fields.isEmpty()) {
             throw new MaterialSupplyValidationException(fields);
         }
@@ -148,7 +150,8 @@ public class MaterialSupplyService {
                 quantity,
                 unitPrice,
                 deliveryLeadTimeDays,
-                normalizedDeliveryNotes);
+                normalizedDeliveryNotes,
+                status);
         if (updatedRows != 1) {
             throw new MaterialSupplyNotFoundException();
         }
@@ -156,17 +159,22 @@ public class MaterialSupplyService {
     }
 
     @Transactional
-    public MaterialSupply archiveOwnSupply(long userId, long supplyId) {
+    public void deleteOwnSupply(long userId, long supplyId) {
         SupplierProfile supplier = requireSupplierProfile(userId);
-        MaterialSupply supply = requireOwnedSupply(supplyId, supplier.id());
-        if (supply.status() == MaterialSupplyStatus.DISCONTINUED) {
-            return supply;
+        MaterialSupply supply = requireSupply(supplyId);
+        if (supply.supplierId() != supplier.id()) {
+            throw new AccessDeniedException("You cannot delete another supplier's material supply.");
         }
-        int archivedRows = materialSupplyRepository.archive(supplyId, supplier.id());
-        if (archivedRows != 1) {
-            throw new MaterialSupplyNotFoundException();
+        if (materialSupplyRepository.isReferencedByInventory(supplyId)) {
+            throw new MaterialSupplyInUseException();
         }
-        return requireOwnedSupply(supplyId, supplier.id());
+        try {
+            if (materialSupplyRepository.deleteByIdAndSupplierId(supplyId, supplier.id()) != 1) {
+                throw new MaterialSupplyNotFoundException();
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw new MaterialSupplyInUseException();
+        }
     }
 
     private MaterialSupply requireOwnedSupply(long supplyId, long supplierId) {
@@ -193,7 +201,7 @@ public class MaterialSupplyService {
         try {
             return MaterialSupplyStatus.valueOf(normalizedStatus.toUpperCase());
         } catch (IllegalArgumentException exception) {
-            fields.put("status", "Status must be ACTIVE, INACTIVE, or DISCONTINUED.");
+            fields.put("status", "Status must be ACTIVE or INACTIVE.");
             return null;
         }
     }

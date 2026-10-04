@@ -108,11 +108,10 @@ public class InventoryMaterialController {
 
     @DeleteMapping("/{materialId}")
     @InventoryManagerOnly
-    public ArchiveInventoryMaterialResponse archive(@PathVariable long materialId) {
-        InventoryMaterial material = inventoryMaterialService.archiveMaterial(materialId);
-        return new ArchiveInventoryMaterialResponse(
-                "Inventory material archived successfully.",
-                InventoryMaterialResponse.from(material));
+    public DeleteInventoryMaterialResponse delete(@PathVariable long materialId) {
+        inventoryMaterialService.deleteMaterial(materialId);
+        return new DeleteInventoryMaterialResponse(
+                "Inventory material deleted successfully.", materialId);
     }
 
     @GetMapping("/{materialId}/availability")
@@ -133,6 +132,18 @@ public class InventoryMaterialController {
                 materialId, request.quantity());
         return new ConsumeInventoryMaterialResponse(
                 "Inventory stock consumed successfully.",
+                InventoryMaterialResponse.from(material));
+    }
+
+    @PostMapping("/{materialId}/receive")
+    @InventoryManagerOnly
+    public ReceiveInventoryMaterialResponse receive(
+            @PathVariable long materialId,
+            @Valid @RequestBody ReceiveInventoryMaterialRequest request) {
+        InventoryMaterial material = inventoryMaterialService.receiveStock(
+                materialId, request.quantity());
+        return new ReceiveInventoryMaterialResponse(
+                "Supplier material received into inventory successfully.",
                 InventoryMaterialResponse.from(material));
     }
 
@@ -208,8 +219,7 @@ public class InventoryMaterialController {
     public record UpdateInventoryMaterialResponse(
             String message, InventoryMaterialResponse material) {}
 
-    public record ArchiveInventoryMaterialResponse(
-            String message, InventoryMaterialResponse material) {}
+    public record DeleteInventoryMaterialResponse(String message, long materialId) {}
 
     public record ConsumeInventoryMaterialRequest(
             @NotNull(message = "Usage quantity is required.")
@@ -223,6 +233,20 @@ public class InventoryMaterialController {
                     BigDecimal quantity) {}
 
     public record ConsumeInventoryMaterialResponse(
+            String message, InventoryMaterialResponse material) {}
+
+    public record ReceiveInventoryMaterialRequest(
+            @NotNull(message = "Received quantity is required.")
+                    @DecimalMin(
+                            value = "0.001",
+                            message = "Received quantity must be greater than zero.")
+                    @Digits(
+                            integer = 11,
+                            fraction = 3,
+                            message = "Received quantity must have at most 11 digits and 3 decimals.")
+                    BigDecimal quantity) {}
+
+    public record ReceiveInventoryMaterialResponse(
             String message, InventoryMaterialResponse material) {}
 
     public record InventoryMaterialListResponse(List<InventoryMaterialResponse> materials) {}

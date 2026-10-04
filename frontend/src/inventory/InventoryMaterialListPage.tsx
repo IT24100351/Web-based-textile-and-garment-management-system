@@ -2,11 +2,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  archiveInventoryMaterial,
   consumeInventoryMaterial,
+  deleteInventoryMaterial,
   getInventoryMaterialApiError,
   getInventoryMaterials,
   getLowStockInventoryMaterials,
+  receiveInventoryMaterial,
   type InventoryMaterial,
   type InventoryMaterialListFilters,
   type InventoryMaterialStatus,
@@ -20,6 +21,9 @@ import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
 import { Badge } from "../components/ui/Badge";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { MotionSwap } from "../motion/MotionSwap";
+import { motionDurations } from "../motion/motionTokens";
+import { usePresence } from "../motion/usePresence";
 import {
   getEditInventoryMaterialPagePath,
   newInventoryMaterialPagePath,
@@ -55,39 +59,56 @@ function InventoryMaterialCard({
   material,
   sourceSupply,
   onConsumed,
-  onArchived,
+  onReceived,
+  onDeleted,
 }: {
   material: InventoryMaterial;
   sourceSupply?: MaterialSupplyListItem;
   onConsumed: (material: InventoryMaterial) => void;
-  onArchived: (material: InventoryMaterial) => void;
+  onReceived: (material: InventoryMaterial) => void;
+  onDeleted: (materialId: number, message: string) => void;
 }) {
   const [usageQuantity, setUsageQuantity] = useState("");
+  const [receivedQuantity, setReceivedQuantity] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [receiveFieldError, setReceiveFieldError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [receiveRequestError, setReceiveRequestError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [receiveSuccessMessage, setReceiveSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isArchiving, setIsArchiving] = useState(false);
-  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deletedResult, setDeletedResult] = useState<{ materialId: number; message: string } | null>(null);
+  const removalPresence = usePresence(deletedResult === null, {
+    exitDuration: motionDurations.smooth,
+    onExitComplete: () => {
+      if (deletedResult) onDeleted(deletedResult.materialId, deletedResult.message);
+    },
+  });
   const canUseStock = material.status === "ACTIVE";
+  const canReceiveStock = material.status === "ACTIVE" && Boolean(material.sourceMaterialSupplyId);
 
-  async function archiveMaterial() {
-    if (material.status === "DISCONTINUED") return;
+  async function deleteMaterial() {
     setRequestError(null);
     setSuccessMessage(null);
-    setIsArchiving(true);
+    setIsDeleting(true);
     try {
-      const result = await archiveInventoryMaterial(material.id);
-      onArchived(result.material);
-      setSuccessMessage(result.message);
-      setIsArchiveConfirmOpen(false);
+      const result = await deleteInventoryMaterial(material.id);
+      setIsDeleteConfirmOpen(false);
+      setDeletedResult(result);
     } catch (error: unknown) {
-      setRequestError(getInventoryMaterialApiError(
+      const apiError = getInventoryMaterialApiError(
         error,
-        "Inventory material could not be archived. Please try again.",
-      ).message);
+        "Inventory material could not be deleted. Please try again.",
+      );
+      setIsDeleteConfirmOpen(false);
+      setRequestError(apiError.status === 404
+        ? "Material no longer exists."
+        : apiError.message);
     } finally {
-      setIsArchiving(false);
+      setIsDeleting(false);
     }
   }
 
@@ -118,8 +139,43 @@ function InventoryMaterialCard({
     }
   }
 
+  async function receiveStock(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateUsageQuantity(receivedQuantity);
+    setReceiveFieldError(validationError);
+    setReceiveRequestError(null);
+    setReceiveSuccessMessage(null);
+    if (validationError) return;
+
+    setIsReceiving(true);
+    try {
+      const result = await receiveInventoryMaterial(material.id, receivedQuantity.trim());
+      onReceived(result.material);
+      setReceivedQuantity("");
+      setReceiveSuccessMessage(result.message);
+    } catch (error: unknown) {
+      const apiError = getInventoryMaterialApiError(
+        error,
+        "Received supplier stock could not be recorded. Please try again.",
+      );
+      const quantityError = apiError.fields.quantity ?? null;
+      setReceiveFieldError(quantityError);
+      setReceiveRequestError(quantityError ? null : apiError.message);
+    } finally {
+      setIsReceiving(false);
+    }
+  }
+
+  if (!removalPresence.isMounted) return null;
+
   return (
-    <li className="motion-record rounded-3xl border border-border bg-surface/75 p-6 shadow-xl shadow-black/10">
+    <li
+      className="motion-removable"
+      data-motion-state={removalPresence.motionState}
+      inert={removalPresence.motionState === "closed"}
+      onTransitionEnd={removalPresence.onTransitionEnd}
+    >
+      <div className="motion-removable-inner motion-record rounded-3xl border border-border bg-surface/75 p-6 shadow-xl shadow-black/10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -173,15 +229,65 @@ function InventoryMaterialCard({
         </div>
       </dl>
 
+      <form className="mt-6 border-t border-border pt-5" noValidate onSubmit={receiveStock}>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-0 flex-1 text-sm font-medium text-foreground">
+            Received quantity
+            <span className="mt-1 block text-xs font-normal text-muted">
+              Add supplier material received in {material.unitOfMeasure}.
+            </span>
+            <input
+              aria-label={`Receive quantity for ${material.materialName}`}
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none transition focus:border-primary"
+              disabled={!canReceiveStock}
+              inputMode="decimal"
+              min="0.001"
+              onChange={(event) => {
+                setReceivedQuantity(event.target.value);
+                setReceiveFieldError(null);
+                setReceiveRequestError(null);
+                setReceiveSuccessMessage(null);
+              }}
+              placeholder="0.000"
+              step="0.001"
+              type="text"
+              value={receivedQuantity}
+            />
+          </label>
+          <button
+            aria-label={`Receive stock for ${material.materialName}`}
+            className="rounded-full border border-primary/50 px-5 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isReceiving || !canReceiveStock}
+            type="submit"
+          >
+            {isReceiving ? "Receiving..." : "Receive stock"}
+          </button>
+        </div>
+        {receiveFieldError ? (
+          <p className="mt-2 text-sm text-danger" role="alert">{receiveFieldError}</p>
+        ) : null}
+        {receiveRequestError ? (
+          <p className="mt-2 text-sm text-danger" role="alert">{receiveRequestError}</p>
+        ) : null}
+        {!canReceiveStock ? (
+          <p className="mt-2 text-sm text-warning">
+            Receiving is available only for active materials linked to a supplier supply.
+          </p>
+        ) : null}
+        {receiveSuccessMessage ? (
+          <p className="mt-2 text-sm text-success" role="status">{receiveSuccessMessage}</p>
+        ) : null}
+      </form>
+
       <form className="mt-6 border-t border-border pt-5" noValidate onSubmit={consumeStock}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-0 flex-1 text-sm font-medium text-foreground">
-            Usage quantity
+            Production release quantity
             <span className="mt-1 block text-xs font-normal text-muted">
-              Record material used in {material.unitOfMeasure}.
+              Release material to production in {material.unitOfMeasure}.
             </span>
             <input
-              aria-label={`Use quantity for ${material.materialName}`}
+              aria-label={`Release quantity for ${material.materialName}`}
               className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none transition focus:border-primary"
               disabled={!canUseStock}
               inputMode="decimal"
@@ -199,12 +305,12 @@ function InventoryMaterialCard({
             />
           </label>
           <button
-            aria-label={`Use stock for ${material.materialName}`}
+            aria-label={`Release stock to production for ${material.materialName}`}
             className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting || !canUseStock}
             type="submit"
           >
-            {isSubmitting ? "Recording…" : "Use stock"}
+            {isSubmitting ? "Releasing..." : "Release to production"}
           </button>
         </div>
         {fieldError ? (
@@ -215,7 +321,7 @@ function InventoryMaterialCard({
         ) : null}
         {!canUseStock ? (
           <p className="mt-2 text-sm text-warning">
-            Stock usage is disabled while this material is {material.status.toLowerCase()}.
+            Production release is disabled while this material is {material.status.toLowerCase()}.
           </p>
         ) : null}
         {successMessage ? (
@@ -228,30 +334,28 @@ function InventoryMaterialCard({
           className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-foreground transition hover:border-border"
           to={getEditInventoryMaterialPagePath(material.id)}
         >
-          {material.status === "DISCONTINUED" ? "View archived record" : "Edit metadata"}
+          Edit material
         </Link>
-        {material.status !== "DISCONTINUED" ? (
-          <button
-            className="rounded-full border border-danger-border px-4 py-2 text-sm font-semibold text-danger transition hover:bg-danger-soft disabled:opacity-50"
-            disabled={isArchiving}
-            onClick={() => setIsArchiveConfirmOpen(true)}
-            type="button"
-          >
-            {isArchiving ? "Archiving…" : "Archive material"}
-          </button>
-        ) : (
-          <span className="rounded-full border border-border px-4 py-2 text-sm font-semibold text-muted">Archived · history preserved</span>
-        )}
+        <button
+          className="rounded-full border border-danger-border px-4 py-2 text-sm font-semibold text-danger transition hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isDeleting || Number(material.currentQuantity) !== 0}
+          onClick={() => setIsDeleteConfirmOpen(true)}
+          type="button"
+        >
+          {isDeleting ? "Deleting…" : "Delete material"}
+        </button>
+        {Number(material.currentQuantity) !== 0 ? <p className="w-full text-xs text-muted">Delete is available only after remaining stock reaches zero.</p> : null}
+      </div>
       </div>
       <ConfirmDialog
-        cancelLabel="Keep material active"
-        confirmLabel="Archive material"
-        description={`Archive ${material.materialName}? The record will remain available for historical reporting.`}
-        isBusy={isArchiving}
-        isOpen={isArchiveConfirmOpen}
-        onCancel={() => setIsArchiveConfirmOpen(false)}
-        onConfirm={() => void archiveMaterial()}
-        title="Archive inventory material?"
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        description={`Are you sure you want to delete "${material.materialName}"? Stock must be zero and materials used by production cannot be deleted.`}
+        isBusy={isDeleting}
+        isOpen={isDeleteConfirmOpen}
+        onCancel={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={() => void deleteMaterial()}
+        title="Delete material?"
       />
     </li>
   );
@@ -262,7 +366,9 @@ export function InventoryMaterialListPage() {
   const [lowStockMaterials, setLowStockMaterials] = useState<InventoryMaterial[]>([]);
   const [sourceSupplies, setSourceSupplies] = useState<MaterialSupplyListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [requestVersion, setRequestVersion] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [statusInput, setStatusInput] = useState<InventoryMaterialStatus | "">("");
@@ -294,7 +400,10 @@ export function InventoryMaterialListPage() {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setHasLoaded(true);
+          setIsLoading(false);
+        }
       });
     return () => controller.abort();
   }, [filters, requestVersion]);
@@ -332,11 +441,14 @@ export function InventoryMaterialListPage() {
     });
   }
 
-  function updateArchivedMaterial(updatedMaterial: InventoryMaterial) {
-    setMaterials((current) => current.map((material) => (
-      material.id === updatedMaterial.id ? updatedMaterial : material
-    )));
-    setLowStockMaterials((current) => current.filter((material) => material.id !== updatedMaterial.id));
+  function updateReceivedMaterial(updatedMaterial: InventoryMaterial) {
+    updateConsumedMaterial(updatedMaterial);
+  }
+
+  function removeDeletedMaterial(materialId: number, message: string) {
+    setMaterials((current) => current.filter((material) => material.id !== materialId));
+    setLowStockMaterials((current) => current.filter((material) => material.id !== materialId));
+    setSuccessMessage(message);
   }
 
   const supplyById = new Map(sourceSupplies.map((supply) => [supply.id, supply]));
@@ -367,7 +479,13 @@ export function InventoryMaterialListPage() {
           </Link>
         </div>
 
-        {!isLoading && !errorMessage ? (
+        {successMessage ? (
+          <p className="mt-6 rounded-2xl border border-success-border bg-success-soft p-4 text-sm text-success" role="status">
+            {successMessage}
+          </p>
+        ) : null}
+
+        {hasLoaded && !errorMessage ? (
           <section
             aria-label="Low-stock monitoring"
             className={`mt-8 rounded-3xl border p-5 ${
@@ -460,7 +578,6 @@ export function InventoryMaterialListPage() {
               <option value="">All statuses</option>
               <option value="ACTIVE">Active</option>
               <option value="INACTIVE">Inactive</option>
-              <option value="DISCONTINUED">Discontinued</option>
             </select>
           </label>
 
@@ -497,70 +614,74 @@ export function InventoryMaterialListPage() {
           </div>
         </form>
 
-        <div className="mt-8">
-          {isLoading ? (
-            <LoadingState
-              message="Fetching inventory stock and linked supplier references."
-              title="Loading inventory materials"
-            />
-          ) : errorMessage ? (
-            <ErrorState
-              action={(
-                <button
-                  className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
-                  onClick={retry}
-                  type="button"
-                >
-                  Retry
-                </button>
-              )}
-              message={errorMessage}
-              title="Inventory materials unavailable"
-            />
-          ) : materials.length === 0 ? (
-            <EmptyState
-              action={hasFilters ? (
-                <button
-                  className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
-                  onClick={clearFilters}
-                  type="button"
-                >
-                  Clear filters
-                </button>
-              ) : (
-                <Link
-                  className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
-                  to={newInventoryMaterialPagePath}
-                >
-                  Add first material
-                </Link>
-              )}
-              message={hasFilters
-                ? "No inventory records match the current search and filters."
-                : "No fabric or raw-material stock records have been created yet."}
-              title={hasFilters ? "No matching inventory materials" : "No inventory materials"}
-            />
-          ) : (
-            <>
-              <p aria-live="polite" className="text-sm text-muted">
-                {materials.length} {materials.length === 1 ? "material" : "materials"} found
-                {hasFilters ? " for the current filters" : ""}
-              </p>
-              <ul className="mt-5 grid gap-5 lg:grid-cols-2">
-                {materials.map((material) => (
-                  <InventoryMaterialCard
-                    key={material.id}
-                    material={material}
-                    onArchived={updateArchivedMaterial}
-                    onConsumed={updateConsumedMaterial}
-                    sourceSupply={material.sourceMaterialSupplyId
-                      ? supplyById.get(material.sourceMaterialSupplyId)
-                      : undefined}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
+        <div aria-busy={isLoading} className="mt-8">
+          <MotionSwap stateKey={!hasLoaded ? "loading" : errorMessage ? "error" : materials.length === 0 ? "empty" : "content"}>
+            {!hasLoaded ? (
+              <LoadingState
+                message="Fetching inventory stock and linked supplier references."
+                title="Loading inventory materials"
+              />
+            ) : errorMessage ? (
+              <ErrorState
+                action={(
+                  <button
+                    className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
+                    onClick={retry}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                )}
+                message={errorMessage}
+                title="Inventory materials unavailable"
+              />
+            ) : materials.length === 0 ? (
+              <EmptyState
+                action={hasFilters ? (
+                  <button
+                    className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
+                    onClick={clearFilters}
+                    type="button"
+                  >
+                    Clear filters
+                  </button>
+                ) : (
+                  <Link
+                    className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary-hover"
+                    to={newInventoryMaterialPagePath}
+                  >
+                    Add first material
+                  </Link>
+                )}
+                message={hasFilters
+                  ? "No inventory records match the current search and filters."
+                  : "No fabric or raw-material stock records have been created yet."}
+                title={hasFilters ? "No matching inventory materials" : "No inventory materials"}
+              />
+            ) : (
+              <div>
+                {isLoading ? <p className="mb-3 text-sm text-muted" role="status">Updating inventory results…</p> : null}
+                <p aria-live="polite" className="text-sm text-muted">
+                  {materials.length} {materials.length === 1 ? "material" : "materials"} found
+                  {hasFilters ? " for the current filters" : ""}
+                </p>
+                <ul className="mt-5 grid gap-5 lg:grid-cols-2">
+                  {materials.map((material) => (
+                    <InventoryMaterialCard
+                      key={material.id}
+                      material={material}
+                      onDeleted={removeDeletedMaterial}
+                      onConsumed={updateConsumedMaterial}
+                      onReceived={updateReceivedMaterial}
+                      sourceSupply={material.sourceMaterialSupplyId
+                        ? supplyById.get(material.sourceMaterialSupplyId)
+                        : undefined}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </MotionSwap>
         </div>
       </div>
     </section>

@@ -43,4 +43,20 @@ class ProductImageStorageServiceTests {
                                 ((ProductValidationException) exception).fields())
                         .containsKey("imageFile"));
     }
+
+    @Test
+    void deletesOnlyValidatedManagedImages() {
+        var service = new ProductImageStorageService(temporaryDirectory.toString());
+        byte[] png = new byte[] {
+            (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00
+        };
+        var stored = service.store(new MockMultipartFile(
+                "imageFile", "shirt.png", "image/png", png));
+        String fileName = stored.imageUrl().substring(stored.imageUrl().lastIndexOf('/') + 1);
+
+        assertThat(service.deleteManagedImage(stored.imageUrl())).isTrue();
+        assertThat(service.find(fileName)).isEmpty();
+        assertThat(service.deleteManagedImage("https://example.com/product.png")).isFalse();
+        assertThat(service.deleteManagedImage("/api/product-images/../secret.png")).isFalse();
+    }
 }

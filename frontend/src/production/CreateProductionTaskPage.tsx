@@ -10,6 +10,7 @@ import {
 } from "../api/productionTasks";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
 import { getProductionTaskDetailPagePath } from "../navigation/navigation";
+import { ProductImage } from "../products/ProductImage";
 
 const selectClassName =
   "mt-2 w-full rounded-xl border border-border bg-background px-4 py-3 text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -149,6 +150,9 @@ export function CreateProductionTaskPage() {
         <p className="mt-3 max-w-3xl leading-7 text-muted">
           Select an order that Order Management currently marks ready for production. The task stores only the stable Order ID; order items remain owned by Order Management.
         </p>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
+          An order can have multiple production tasks. Check existing production records before creating another task; the order becomes ready for delivery only after every task is completed.
+        </p>
 
         {created ? (
           <div className="mt-7 rounded-2xl border border-success-border bg-success-soft p-5" role="status">
@@ -207,12 +211,20 @@ export function CreateProductionTaskPage() {
 
               <div className="mt-6 space-y-3">
                 {selectedOrder.items.map((item) => (
-                  <article className="rounded-2xl border border-border bg-background/50 p-4" key={item.orderItemId}>
-                    <p className="font-semibold text-foreground">Order item #{item.orderItemId}</p>
-                    <p className="mt-2 text-sm text-foreground-muted">
-                      Product #{item.productId} · Variant #{item.variantId} · {item.selectedSize} · {item.selectedColor}
-                    </p>
-                    <p className="mt-1 text-sm text-muted">Required quantity: {item.quantity}</p>
+                  <article className="flex gap-4 rounded-2xl border border-border bg-background/50 p-4" key={item.orderItemId}>
+                    <ProductImage
+                      alt={`${item.productName ?? `Product #${item.productId}`} order item`}
+                      className="h-20 w-20 shrink-0 rounded-xl border border-border"
+                      productName={item.productName ?? `Product #${item.productId}`}
+                      src={item.productImageUrl}
+                    />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground">{item.productName ?? `Order item #${item.orderItemId}`}</p>
+                      <p className="mt-2 text-sm text-foreground-muted">
+                        Product #{item.productId} · Variant #{item.variantId} · {item.selectedSize} · {item.selectedColor}
+                      </p>
+                      <p className="mt-1 text-sm text-muted">Required quantity: {item.quantity}</p>
+                    </div>
                   </article>
                 ))}
               </div>

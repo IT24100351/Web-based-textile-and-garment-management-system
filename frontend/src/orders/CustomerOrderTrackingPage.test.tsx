@@ -140,6 +140,8 @@ describe("TGMS-47/TGMS-65 customer order and delivery tracking", () => {
     ));
     expect(await screen.findByRole("heading", { name: "ORD-TRACK-91" })).toBeInTheDocument();
     expect(screen.getAllByText("In Production").length).toBeGreaterThan(0);
+    expect(screen.getByText("Your order is being made by the production team."))
+      .toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("LKR 7670.00")).toBeInTheDocument();
     expect(screen.getByText("Pending → Confirmed")).toBeInTheDocument();
@@ -198,6 +200,31 @@ describe("TGMS-47/TGMS-65 customer order and delivery tracking", () => {
     expect(await screen.findByText("No later status transition has been recorded yet."))
       .toBeInTheDocument();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
+    expect(screen.getByText("We received your order. Our sales team still needs to confirm it."))
+      .toBeInTheDocument();
+  });
+
+  it("explains completed production as delivery preparation for the customer", async () => {
+    mockedGetMyOrderTracking.mockResolvedValue({
+      ...tracking,
+      currentStatus: "READY_FOR_DELIVERY",
+      orderHistory: [
+        ...tracking.orderHistory,
+        {
+          id: 203,
+          fromStatus: "IN_PRODUCTION",
+          toStatus: "READY_FOR_DELIVERY",
+          changedAt: "2026-08-23T14:00:00Z",
+        },
+      ],
+    });
+    renderTracking("/orders/track/91");
+
+    expect(await screen.findByRole("heading", { name: "ORD-TRACK-91" })).toBeInTheDocument();
+    expect(screen.getAllByText("Ready For Delivery").length).toBeGreaterThan(0);
+    expect(screen.getByText("Production is complete. The sales team can now prepare delivery."))
+      .toBeInTheDocument();
+    expect(screen.getByText("In Production → Ready For Delivery")).toBeInTheDocument();
   });
 
   it("rejects malformed order IDs locally without calling the tracking API", async () => {

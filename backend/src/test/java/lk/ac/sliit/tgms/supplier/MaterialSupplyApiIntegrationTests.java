@@ -327,7 +327,8 @@ class MaterialSupplyApiIntegrationTests {
                                   "quantity": 88.250,
                                   "unitPrice": 725.50,
                                   "deliveryLeadTimeDays": 6,
-                                  "deliveryNotes": " Updated delivery window "
+                                  "deliveryNotes": " Updated delivery window ",
+                                  "status": "INACTIVE"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -338,12 +339,13 @@ class MaterialSupplyApiIntegrationTests {
                 .andExpect(jsonPath("$.supply.quantity").value("88.250"))
                 .andExpect(jsonPath("$.supply.unitPrice").value("725.50"))
                 .andExpect(jsonPath("$.supply.deliveryLeadTimeDays").value(6))
-                .andExpect(jsonPath("$.supply.deliveryNotes").value("Updated delivery window"));
+                .andExpect(jsonPath("$.supply.deliveryNotes").value("Updated delivery window"))
+                .andExpect(jsonPath("$.supply.status").value("INACTIVE"));
 
         assertThat(jdbcTemplate.queryForMap(
                         """
                         SELECT supplier_id, material_code, material_name, quantity,
-                               unit_price, delivery_lead_time_days, delivery_notes, updated_at
+                               unit_price, delivery_lead_time_days, delivery_notes, status, updated_at
                         FROM material_supplies WHERE id = ?
                         """,
                         supplyId))
@@ -351,7 +353,8 @@ class MaterialSupplyApiIntegrationTests {
                 .containsEntry("MATERIAL_CODE", "EDIT-OWN")
                 .containsEntry("MATERIAL_NAME", "Editable cotton")
                 .containsEntry("DELIVERY_LEAD_TIME_DAYS", 6)
-                .containsEntry("DELIVERY_NOTES", "Updated delivery window");
+                .containsEntry("DELIVERY_NOTES", "Updated delivery window")
+                .containsEntry("STATUS", "INACTIVE");
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT updated_at > TIMESTAMP '2026-01-01 00:00:00' FROM material_supplies WHERE id = ?",
                         Boolean.class,
@@ -402,7 +405,8 @@ class MaterialSupplyApiIntegrationTests {
                                   "quantity": -1,
                                   "unitPrice": 0,
                                   "deliveryLeadTimeDays": -2,
-                                  "deliveryNotes": "Invalid update"
+                                  "deliveryNotes": "Invalid update",
+                                  "status": "ACTIVE"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -452,25 +456,56 @@ class MaterialSupplyApiIntegrationTests {
     }
 
     @Test
-    void supplierArchivesOwnSupplyWithoutDeletingHistoricalRecord() throws Exception {
+    void supplierDeletesOwnUnusedSupplyPermanently() throws Exception {
         UserAccount supplier = insertUser(6881, "supplier6881@example.com", UserRole.SUPPLIER);
-        UserAccount inventory = insertUser(
-                6882, "inventory6882@example.com", UserRole.INVENTORY_MANAGER);
-        long supplierId = insertProfile(7881, supplier.id(), "Archive History Company");
-        insertSupply(supplierId, "ARCHIVE-HISTORY", "Historical fabric", "ACTIVE");
-        long supplyId = supplyId("ARCHIVE-HISTORY");
-        jdbcTemplate.update(
-                "UPDATE material_supplies SET updated_at = TIMESTAMP '2026-01-01 00:00:00' WHERE id = ?",
-                supplyId);
+        long supplierId = insertProfile(7881, supplier.id(), "Delete Supply Company");
+        insertSupply(supplierId, "DELETE-SUPPLY", "Unused fabric", "ACTIVE");
+        long supplyId = supplyId("DELETE-SUPPLY");
         Cookie supplierSession = sessionFor(supplier, UserRole.SUPPLIER);
 
         mockMvc.perform(delete("/api/material-supplies/{supplyId}", supplyId)
                         .cookie(supplierSession))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("Material supply archived successfully."))
-                .andExpect(jsonPath("$.supply.id").value(supplyId))
-                .andExpect(jsonPath("$.supply.supplierId").value(supplierId))
-                .andExpect(jsonPath("$.supply.status").value("DISCONTINUED"));
+                .andExpect(jsonPath("$.message").value("Material supply deleted successfully."))
+                .andExpect(jsonPath("$.supplyId").value(supplyId));
+
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM material_supplies WHERE id = ?",
+                        Integer.class,
+                        supplyId))
+                .isZero();
+
+        mockMvc.perform(get("/api/material-supplies/{supplyId}", supplyId)
+                        .cookie(supplierSession))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("MATERIAL_SUPPLY_NOT_FOUND"));
+    }
+
+    @Test
+    void referencedSupplyReturnsConflictAndPreservesInventoryHistory() throws Exception {
+        UserAccount supplier = insertUser(6882, "supplier6882@example.com", UserRole.SUPPLIER);
+        long supplierId = insertProfile(7882, supplier.id(), "Inventory History Supplier");
+        insertSupply(supplierId, "SUPPLY-IN-USE", "Referenced fabric", "ACTIVE");
+        long supplyId = supplyId("SUPPLY-IN-USE");
+        jdbcTemplate.update(
+                """
+                INSERT INTO inventory_materials
+                    (source_material_supply_id, material_code, material_name, material_type,
+                     unit_of_measure, current_quantity, low_stock_threshold, status)
+                VALUES (?, 'SUPPLY-REF-INV', 'Referenced inventory fabric', 'FABRIC',
+                        'metre', 12.000, 2.000, 'ACTIVE')
+                """,
+                supplyId);
+        long inventoryMaterialId = jdbcTemplate.queryForObject(
+                "SELECT id FROM inventory_materials WHERE material_code = 'SUPPLY-REF-INV'",
+                Long.class);
+
+        mockMvc.perform(delete("/api/material-supplies/{supplyId}", supplyId)
+                        .cookie(sessionFor(supplier, UserRole.SUPPLIER)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("SUPPLY_IN_USE"))
+                .andExpect(jsonPath("$.error.message").value(
+                        "This material supply cannot be deleted because it is already used by inventory records."));
 
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM material_supplies WHERE id = ?",
@@ -478,79 +513,46 @@ class MaterialSupplyApiIntegrationTests {
                         supplyId))
                 .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                        "SELECT updated_at > TIMESTAMP '2026-01-01 00:00:00' FROM material_supplies WHERE id = ?",
-                        Boolean.class,
-                        supplyId))
-                .isTrue();
-
-        mockMvc.perform(get("/api/material-supplies")
-                        .cookie(sessionFor(inventory, UserRole.INVENTORY_MANAGER))
-                        .param("search", "ARCHIVE-HISTORY")
-                        .param("status", "DISCONTINUED"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.supplies.length()").value(1))
-                .andExpect(jsonPath("$.supplies[0].id").value(supplyId))
-                .andExpect(jsonPath("$.supplies[0].status").value("DISCONTINUED"));
-
-        mockMvc.perform(get("/api/material-supplies/{supplyId}", supplyId)
-                        .cookie(sessionFor(inventory, UserRole.INVENTORY_MANAGER)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(supplyId))
-                .andExpect(jsonPath("$.supplierId").value(supplierId))
-                .andExpect(jsonPath("$.status").value("DISCONTINUED"));
-
-        mockMvc.perform(delete("/api/material-supplies/{supplyId}", supplyId)
-                        .cookie(supplierSession))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.supply.id").value(supplyId))
-                .andExpect(jsonPath("$.supply.status").value("DISCONTINUED"));
+                        "SELECT source_material_supply_id FROM inventory_materials WHERE id = ?",
+                        Long.class,
+                        inventoryMaterialId))
+                .isEqualTo(supplyId);
     }
 
     @Test
-    void archiveOwnershipAndRolePermissionsAreEnforced() throws Exception {
+    void deleteOwnershipRoleMissingAndRemovedArchiveStatusAreEnforced() throws Exception {
         UserAccount owner = insertUser(6883, "supplier6883@example.com", UserRole.SUPPLIER);
         UserAccount other = insertUser(6884, "supplier6884@example.com", UserRole.SUPPLIER);
         UserAccount administrator = insertUser(
                 6885, "administrator6885@example.com", UserRole.ADMINISTRATOR);
-        long ownerId = insertProfile(7883, owner.id(), "Archive Owner Company");
-        insertProfile(7884, other.id(), "Archive Other Company");
-        insertSupply(ownerId, "ARCHIVE-OWNER", "Owner archive fabric", "ACTIVE");
-        long supplyId = supplyId("ARCHIVE-OWNER");
+        long ownerId = insertProfile(7883, owner.id(), "Delete Owner Company");
+        insertProfile(7884, other.id(), "Delete Other Company");
+        insertSupply(ownerId, "DELETE-OWNER", "Owner fabric", "ACTIVE");
+        long supplyId = supplyId("DELETE-OWNER");
 
         mockMvc.perform(delete("/api/material-supplies/{supplyId}", supplyId)
                         .cookie(sessionFor(other, UserRole.SUPPLIER)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("MATERIAL_SUPPLY_NOT_FOUND"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
         mockMvc.perform(delete("/api/material-supplies/{supplyId}", supplyId)
                         .cookie(sessionFor(administrator, UserRole.ADMINISTRATOR)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mockMvc.perform(delete("/api/material-supplies/{supplyId}", 999999)
+                        .cookie(sessionFor(owner, UserRole.SUPPLIER)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("MATERIAL_SUPPLY_NOT_FOUND"));
+        mockMvc.perform(get("/api/material-supplies")
+                        .cookie(sessionFor(owner, UserRole.SUPPLIER))
+                        .param("status", "DISCONTINUED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
         assertThat(jdbcTemplate.queryForObject(
-                        "SELECT status FROM material_supplies WHERE id = ?",
-                        String.class,
+                        "SELECT COUNT(*) FROM material_supplies WHERE id = ?",
+                        Integer.class,
                         supplyId))
-                .isEqualTo("ACTIVE");
-    }
-
-    @Test
-    void archivedSupplyCannotBeEditedButRemainsReadableByOwner() throws Exception {
-        UserAccount supplier = insertUser(6886, "supplier6886@example.com", UserRole.SUPPLIER);
-        long supplierId = insertProfile(7886, supplier.id(), "Archived Read Company");
-        insertSupply(supplierId, "ARCHIVED-READ", "Archived readable fabric", "DISCONTINUED");
-        long supplyId = supplyId("ARCHIVED-READ");
-        Cookie session = sessionFor(supplier, UserRole.SUPPLIER);
-
-        mockMvc.perform(get("/api/material-supplies/{supplyId}", supplyId).cookie(session))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(supplyId))
-                .andExpect(jsonPath("$.status").value("DISCONTINUED"));
-        mockMvc.perform(put("/api/material-supplies/{supplyId}", supplyId)
-                        .cookie(session)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validUpdateRequest()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("MATERIAL_SUPPLY_ARCHIVED"));
+                .isEqualTo(1);
     }
 
     private UserAccount insertUser(long id, String email, UserRole storedRole) {
@@ -642,12 +644,19 @@ class MaterialSupplyApiIntegrationTests {
                   "quantity": 40.500,
                   "unitPrice": 600.25,
                   "deliveryLeadTimeDays": 8,
-                  "deliveryNotes": "Revised delivery plan"
+                  "deliveryNotes": "Revised delivery plan",
+                  "status": "ACTIVE"
                 }
                 """;
     }
 
     private void cleanTestAccounts() {
+        jdbcTemplate.update("""
+                DELETE FROM inventory_materials
+                WHERE source_material_supply_id IN (
+                    SELECT id FROM material_supplies WHERE supplier_id BETWEEN 7501 AND 7899
+                )
+                """);
         jdbcTemplate.update("DELETE FROM material_supplies WHERE supplier_id BETWEEN 7501 AND 7899");
         jdbcTemplate.update("DELETE FROM supplier_profiles WHERE id BETWEEN 7501 AND 7899");
         jdbcTemplate.update("DELETE FROM users WHERE id BETWEEN 6501 AND 6899");

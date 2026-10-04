@@ -7,6 +7,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -17,6 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class ProductImageStorageService {
 
     static final long MAX_IMAGE_BYTES = 5L * 1024L * 1024L;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProductImageStorageService.class);
+    private static final String MANAGED_IMAGE_PREFIX = "/api/product-images/";
     private final Path storageDirectory;
 
     public ProductImageStorageService(
@@ -56,7 +60,7 @@ public class ProductImageStorageService {
             throw new IllegalStateException("The product photo could not be stored.", exception);
         }
         return new StoredProductImage(
-                "/api/product-images/" + fileName,
+                MANAGED_IMAGE_PREFIX + fileName,
                 imageType.mediaType(),
                 bytes.length);
     }
@@ -80,6 +84,26 @@ public class ProductImageStorageService {
                     : Optional.empty();
         } catch (IOException exception) {
             return Optional.empty();
+        }
+    }
+
+    public boolean deleteManagedImage(String imageUrl) {
+        if (imageUrl == null || !imageUrl.startsWith(MANAGED_IMAGE_PREFIX)) {
+            return false;
+        }
+        String fileName = imageUrl.substring(MANAGED_IMAGE_PREFIX.length());
+        if (!fileName.matches("[0-9a-fA-F-]{36}\\.(jpg|png|webp)")) {
+            return false;
+        }
+        Path candidate = storageDirectory.resolve(fileName).normalize();
+        if (!candidate.getParent().equals(storageDirectory)) {
+            return false;
+        }
+        try {
+            return Files.deleteIfExists(candidate);
+        } catch (IOException exception) {
+            LOGGER.warn("Could not delete replaced managed product image {}", fileName, exception);
+            return false;
         }
     }
 

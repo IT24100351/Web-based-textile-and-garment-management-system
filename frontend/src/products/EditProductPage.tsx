@@ -1,18 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
-  discontinueProduct,
+  deleteProduct,
   getProduct,
   getProductApiError,
   updateProduct,
   type CreateProductAvailability,
 } from "../api/products";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import {
   getProductDetailPagePath,
   parseProductPageId,
   productCatalogPagePath,
+  productManagementPagePath,
 } from "../navigation/navigation";
 import {
   normalizeProductForm,
@@ -40,6 +42,7 @@ function formFromProduct(
     color: variant.color,
     price: variant.price,
     availability: variant.status as CreateProductAvailability,
+    status: product.status,
   };
 }
 
@@ -70,46 +73,8 @@ function EditProductNotFoundState() {
   );
 }
 
-function DiscontinuedProductState({
-  product,
-  message,
-}: {
-  product: GarmentProductDetails;
-  message: string | null;
-}) {
-  return (
-    <section className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
-      <div className="mx-auto max-w-4xl rounded-3xl border border-warning-border bg-warning-soft p-7 sm:p-10">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-warning">
-          Product lifecycle updated
-        </p>
-        <h1 className="mt-3 text-3xl font-bold text-foreground">Product discontinued</h1>
-        <p aria-live="polite" className="mt-3 leading-7 text-warning">
-          {message ?? "This product was previously discontinued."} Product ID {product.id} and
-          its variant records remain stored for historical references.
-        </p>
-        <dl className="mt-7 grid gap-4 rounded-2xl border border-warning-border bg-background/60 p-5 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-muted">Product</dt>
-            <dd className="mt-1 font-semibold text-foreground">{product.name}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-muted">Status</dt>
-            <dd className="mt-1 font-semibold text-warning">Discontinued</dd>
-          </div>
-        </dl>
-        <Link
-          className="mt-7 inline-flex rounded-full border border-warning-border px-5 py-2.5 text-sm font-semibold text-warning transition hover:border-warning-border"
-          to={productCatalogPagePath}
-        >
-          Back to garment catalog
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 function EditProductContent({ productId }: { productId: number }) {
+  const navigate = useNavigate();
   const [product, setProduct] = useState<GarmentProductDetails | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [form, setForm] = useState<ProductFormInput | null>(null);
@@ -120,10 +85,10 @@ function EditProductContent({ productId }: { productId: number }) {
   const [isNotFound, setIsNotFound] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isConfirmingDiscontinuation, setIsConfirmingDiscontinuation] = useState(false);
-  const [isDiscontinuing, setIsDiscontinuing] = useState(false);
-  const [discontinuationError, setDiscontinuationError] = useState<string | null>(null);
-  const [discontinuationMessage, setDiscontinuationMessage] = useState<string | null>(null);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [navigateAfterDelete, setNavigateAfterDelete] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
 
   useEffect(() => {
@@ -134,9 +99,7 @@ function EditProductContent({ productId }: { productId: number }) {
         if (controller.signal.aborted) {
           return;
         }
-        const firstEditableVariant = storedProduct.variants.find(
-          (variant) => variant.status !== "DISCONTINUED",
-        );
+        const firstEditableVariant = storedProduct.variants[0];
         setProduct(storedProduct);
         if (firstEditableVariant) {
           setSelectedVariantId(firstEditableVariant.id);
@@ -189,7 +152,7 @@ function EditProductContent({ productId }: { productId: number }) {
       return;
     }
     const variant = product.variants.find((candidate) => candidate.id === variantId);
-    if (!variant || variant.status === "DISCONTINUED") {
+    if (!variant) {
       return;
     }
     setSelectedVariantId(variant.id);
@@ -239,21 +202,24 @@ function EditProductContent({ productId }: { productId: number }) {
     }
   }
 
-  async function confirmDiscontinuation() {
-    setDiscontinuationError(null);
-    setIsDiscontinuing(true);
+  async function confirmDelete() {
+    if (isDeleting) return;
+    setDeleteError(null);
+    setIsDeleting(true);
     try {
-      const result = await discontinueProduct(productId);
-      setProduct(result.product);
-      setDiscontinuationMessage(result.message);
-      setIsConfirmingDiscontinuation(false);
+      await deleteProduct(productId);
+      setNavigateAfterDelete(true);
+      setIsConfirmingDelete(false);
     } catch (error: unknown) {
-      setDiscontinuationError(getProductApiError(
+      const apiError = getProductApiError(
         error,
-        "The garment product could not be discontinued. Please try again.",
-      ).message);
+        "The garment product could not be deleted. Please try again.",
+      );
+      setDeleteError(apiError.status === 404
+        ? "Product no longer exists."
+        : apiError.message);
     } finally {
-      setIsDiscontinuing(false);
+      setIsDeleting(false);
     }
   }
 
@@ -292,18 +258,7 @@ function EditProductContent({ productId }: { productId: number }) {
     );
   }
 
-  if (product.status === "DISCONTINUED") {
-    return (
-      <DiscontinuedProductState
-        message={discontinuationMessage}
-        product={product}
-      />
-    );
-  }
-
-  const editableVariants = product.variants.filter(
-    (variant) => variant.status !== "DISCONTINUED",
-  );
+  const editableVariants = product.variants;
   if (!form || selectedVariantId === null || editableVariants.length === 0) {
     return (
       <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
@@ -316,8 +271,8 @@ function EditProductContent({ productId }: { productId: number }) {
               Back to garment catalog
             </Link>
           )}
-          message="All variants are discontinued. Lifecycle changes are handled separately from product information maintenance."
-          title="No editable variants"
+          message="This product has no variants available for maintenance."
+          title="No product variants"
         />
       </div>
     );
@@ -496,6 +451,25 @@ function EditProductContent({ productId }: { productId: number }) {
                 <option value="UNAVAILABLE">Unavailable</option>
               </select>
             </label>
+
+            <label className="block text-sm font-medium text-foreground" htmlFor="edit-product-status">
+              Product status
+              <select
+                className={inputClassName}
+                id="edit-product-status"
+                onChange={(event) => updateField(
+                  "status",
+                  event.target.value as ProductFormInput["status"],
+                )}
+                value={form.status}
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+              <span className="mt-2 block text-xs text-muted">
+                Use Inactive to stop selling without deleting historical product data.
+              </span>
+            </label>
           </div>
 
           {submissionError ? (
@@ -542,65 +516,44 @@ function EditProductContent({ productId }: { productId: number }) {
 
         <section className="mt-8 rounded-3xl border border-danger-border bg-danger-soft p-6 sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-danger">
-            Product lifecycle
+            Permanent action
           </p>
-          <h2 className="mt-2 text-2xl font-bold text-foreground">Discontinue this product</h2>
+          <h2 className="mt-2 text-2xl font-bold text-foreground">Delete product</h2>
           <p className="mt-3 max-w-2xl leading-7 text-foreground-muted">
-            This removes the product and all its variants from new-order selection while
-            retaining their stable IDs for historical records.
+            Permanently delete this product only when it has never been used in an order or
+            quotation. Use INACTIVE when a product should remain stored but stop being sold.
           </p>
 
-          {isConfirmingDiscontinuation ? (
-            <div
-              aria-describedby="discontinue-product-description"
-              aria-labelledby="discontinue-product-title"
-              className="mt-6 rounded-2xl border border-danger-border bg-background/70 p-5"
-              role="alertdialog"
-            >
-              <h3 className="text-lg font-bold text-foreground" id="discontinue-product-title">
-                Confirm product discontinuation
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-foreground-muted" id="discontinue-product-description">
-                Confirm that {product.name} should no longer be offered for new orders. This
-                action does not delete its historical database records.
-              </p>
-              {discontinuationError ? (
-                <p className="mt-4 text-sm text-danger" role="alert">
-                  {discontinuationError}
-                </p>
-              ) : null}
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  className="rounded-xl bg-danger px-5 py-3 font-semibold text-foreground transition hover:bg-danger disabled:cursor-wait disabled:opacity-60"
-                  disabled={isDiscontinuing}
-                  onClick={() => void confirmDiscontinuation()}
-                  type="button"
-                >
-                  {isDiscontinuing ? "Discontinuing product…" : "Confirm discontinuation"}
-                </button>
-                <button
-                  className="rounded-xl border border-border px-5 py-3 font-semibold text-foreground transition hover:border-border disabled:opacity-60"
-                  disabled={isDiscontinuing}
-                  onClick={() => {
-                    setIsConfirmingDiscontinuation(false);
-                    setDiscontinuationError(null);
-                  }}
-                  type="button"
-                >
-                  Keep product active
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              className="mt-6 rounded-xl border border-danger-border px-5 py-3 font-semibold text-danger transition hover:bg-danger-soft"
-              onClick={() => setIsConfirmingDiscontinuation(true)}
-              type="button"
-            >
-              Discontinue product
-            </button>
-          )}
+          <button
+            className="mt-6 rounded-xl border border-danger-border px-5 py-3 font-semibold text-danger transition hover:bg-danger-soft"
+            onClick={() => {
+              setDeleteError(null);
+              setNavigateAfterDelete(false);
+              setIsConfirmingDelete(true);
+            }}
+            type="button"
+          >
+            Delete product
+          </button>
         </section>
+        <ConfirmDialog
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          description="Are you sure you want to permanently delete this product? Products already used in orders or quotations cannot be deleted."
+          error={deleteError}
+          isBusy={isDeleting}
+          isOpen={isConfirmingDelete}
+          onAfterClose={() => {
+            if (navigateAfterDelete) navigate(productManagementPagePath, { replace: true });
+          }}
+          onCancel={() => {
+            setNavigateAfterDelete(false);
+            setIsConfirmingDelete(false);
+            setDeleteError(null);
+          }}
+          onConfirm={() => void confirmDelete()}
+          title="Delete product?"
+        />
       </div>
     </section>
   );

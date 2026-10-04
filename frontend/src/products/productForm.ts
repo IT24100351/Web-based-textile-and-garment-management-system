@@ -26,6 +26,7 @@ export function emptyProductForm(): ProductFormInput {
     color: "",
     price: "",
     availability: "AVAILABLE",
+    status: "ACTIVE",
   };
 }
 
@@ -40,6 +41,7 @@ export function normalizeProductForm(form: ProductFormInput): ProductFormInput {
     color: form.color.trim(),
     price: form.price.trim(),
     availability: form.availability,
+    status: form.status,
     ...(imageUrl ? { imageUrl } : {}),
   };
 }

@@ -40,6 +40,12 @@ public interface ProductionTaskRepository {
 
     List<ProductionTaskMaterialUsage> findMaterialUsage(long taskId);
 
+    void deleteMaterialRequirements(long taskId);
+
+    void deleteWorkDetails(long taskId);
+
+    int deletePending(long taskId);
+
     ProductionTaskMaterialUsage createMaterialUsage(
             long taskId,
             long inventoryMaterialId,

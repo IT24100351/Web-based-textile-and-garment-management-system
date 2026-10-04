@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { api } from "./client";
 
-export type MaterialSupplyStatus = "ACTIVE" | "INACTIVE" | "DISCONTINUED";
+export type MaterialSupplyStatus = "ACTIVE" | "INACTIVE";
 
 export interface MaterialSupply {
   id: number;
@@ -41,6 +41,7 @@ export interface UpdateMaterialSupplyInput {
   unitPrice: string;
   deliveryLeadTimeDays: string;
   deliveryNotes: string;
+  status: MaterialSupplyStatus;
 }
 
 export interface UpdateMaterialSupplyResponse {
@@ -48,9 +49,9 @@ export interface UpdateMaterialSupplyResponse {
   supply: MaterialSupply;
 }
 
-export interface ArchiveMaterialSupplyResponse {
+export interface DeleteMaterialSupplyResponse {
   message: string;
-  supply: MaterialSupply;
+  supplyId: number;
 }
 
 export interface MaterialSupplyListItem extends MaterialSupply {
@@ -126,10 +127,10 @@ export async function updateMaterialSupply(
   return response.data;
 }
 
-export async function archiveMaterialSupply(
+export async function deleteMaterialSupply(
   supplyId: number,
-): Promise<ArchiveMaterialSupplyResponse> {
-  const response = await api.delete<ArchiveMaterialSupplyResponse>(
+): Promise<DeleteMaterialSupplyResponse> {
+  const response = await api.delete<DeleteMaterialSupplyResponse>(
     `/material-supplies/${supplyId}`,
   );
   return response.data;

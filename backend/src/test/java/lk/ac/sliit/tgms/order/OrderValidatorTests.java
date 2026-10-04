@@ -78,6 +78,7 @@ class OrderValidatorTests {
                 61L,
                 81L,
                 "Classic Oxford Shirt",
+                "/api/product-images/shirt.jpg",
                 71L,
                 "Formal Wear",
                 "M",

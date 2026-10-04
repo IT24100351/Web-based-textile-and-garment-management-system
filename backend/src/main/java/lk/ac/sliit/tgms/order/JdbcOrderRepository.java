@@ -54,6 +54,8 @@ public class JdbcOrderRepository implements OrderRepository {
             long orderId,
             long productId,
             long variantId,
+            String productNameSnapshot,
+            String productImageUrlSnapshot,
             int quantity,
             String selectedSize,
             String selectedColor,
@@ -64,26 +66,31 @@ public class JdbcOrderRepository implements OrderRepository {
                     order_id,
                     product_id,
                     variant_id,
+                    product_name_snapshot,
+                    product_image_url_snapshot,
                     quantity,
                     selected_size,
                     selected_color,
                     unit_price_snapshot
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 statement -> {
                     statement.setLong(1, orderId);
                     statement.setLong(2, productId);
                     statement.setLong(3, variantId);
-                    statement.setInt(4, quantity);
-                    statement.setString(5, selectedSize);
-                    statement.setString(6, selectedColor);
-                    statement.setBigDecimal(7, unitPriceSnapshot);
+                    statement.setString(4, productNameSnapshot);
+                    statement.setString(5, productImageUrlSnapshot);
+                    statement.setInt(6, quantity);
+                    statement.setString(7, selectedSize);
+                    statement.setString(8, selectedColor);
+                    statement.setBigDecimal(9, unitPriceSnapshot);
                 });
 
         return jdbcTemplate.queryForObject(
                 """
                 SELECT id, order_id, product_id, variant_id, quantity,
+                       product_name_snapshot, product_image_url_snapshot,
                        selected_size, selected_color, unit_price_snapshot,
                        created_at, updated_at
                 FROM order_items
@@ -94,6 +101,8 @@ public class JdbcOrderRepository implements OrderRepository {
                         resultSet.getLong("order_id"),
                         resultSet.getLong("product_id"),
                         resultSet.getLong("variant_id"),
+                        resultSet.getString("product_name_snapshot"),
+                        resultSet.getString("product_image_url_snapshot"),
                         resultSet.getInt("quantity"),
                         resultSet.getString("selected_size"),
                         resultSet.getString("selected_color"),
@@ -110,10 +119,17 @@ public class JdbcOrderRepository implements OrderRepository {
                        u.full_name AS customer_name, u.email AS customer_email,
                        o.status, o.created_at, o.updated_at,
                        COUNT(oi.id) AS item_count,
+                       preview_item.product_name_snapshot AS preview_product_name,
+                       preview_item.product_image_url_snapshot AS preview_product_image_url,
                        COALESCE(SUM(oi.unit_price_snapshot * oi.quantity), 0.00) AS total_amount
                 FROM orders o
                 JOIN users u ON u.id = o.customer_id
                 LEFT JOIN order_items oi ON oi.order_id = o.id
+                LEFT JOIN order_items preview_item ON preview_item.id = (
+                    SELECT MIN(first_item.id)
+                    FROM order_items first_item
+                    WHERE first_item.order_id = o.id
+                )
                 WHERE 1 = 1
                 """);
         List<Object> parameters = new ArrayList<>();
@@ -142,7 +158,9 @@ public class JdbcOrderRepository implements OrderRepository {
 
         sql.append("""
                 GROUP BY o.id, o.order_number, o.customer_id,
-                         u.full_name, u.email, o.status, o.created_at, o.updated_at
+                         u.full_name, u.email, o.status, o.created_at, o.updated_at,
+                         preview_item.product_name_snapshot,
+                         preview_item.product_image_url_snapshot
                 ORDER BY o.created_at DESC, o.id DESC
                 """);
 
@@ -158,6 +176,8 @@ public class JdbcOrderRepository implements OrderRepository {
                         timestamp(resultSet.getTimestamp("created_at")),
                         timestamp(resultSet.getTimestamp("updated_at")),
                         Math.toIntExact(resultSet.getLong("item_count")),
+                        resultSet.getString("preview_product_name"),
+                        resultSet.getString("preview_product_image_url"),
                         money(resultSet.getBigDecimal("total_amount"))),
                 parameters.toArray());
     }
@@ -199,12 +219,12 @@ public class JdbcOrderRepository implements OrderRepository {
         List<OrderDetailItem> items = jdbcTemplate.query(
                 """
                 SELECT oi.id, oi.product_id, oi.variant_id,
-                       p.name AS product_name,
+                       oi.product_name_snapshot AS product_name,
+                       oi.product_image_url_snapshot AS product_image_url,
                        oi.quantity, oi.selected_size, oi.selected_color,
                        oi.unit_price_snapshot,
                        (oi.unit_price_snapshot * oi.quantity) AS line_total
                 FROM order_items oi
-                JOIN garment_products p ON p.id = oi.product_id
                 WHERE oi.order_id = ?
                 ORDER BY oi.id ASC
                 """,
@@ -213,6 +233,7 @@ public class JdbcOrderRepository implements OrderRepository {
                         resultSet.getLong("product_id"),
                         resultSet.getLong("variant_id"),
                         resultSet.getString("product_name"),
+                        resultSet.getString("product_image_url"),
                         resultSet.getInt("quantity"),
                         resultSet.getString("selected_size"),
                         resultSet.getString("selected_color"),
@@ -284,6 +305,39 @@ public class JdbcOrderRepository implements OrderRepository {
                 (resultSet, rowNumber) -> paymentRecord(resultSet),
                 orderId);
         return rows.stream().findFirst();
+    }
+
+    @Override
+    public Optional<OrderStatus> findStatusForUpdate(long orderId) {
+        return jdbcTemplate.query("SELECT status FROM orders WHERE id = ? FOR UPDATE",
+                (rs, row) -> OrderStatus.valueOf(rs.getString("status")), orderId)
+                .stream().findFirst();
+    }
+
+    @Override
+    public boolean hasDownstreamHistory(long orderId) {
+        Boolean exists = jdbcTemplate.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM production_tasks WHERE order_id = ?)
+                    OR EXISTS(SELECT 1 FROM deliveries WHERE order_id = ?)
+                    OR EXISTS(SELECT 1 FROM order_invoices WHERE order_id = ?)
+                    OR EXISTS(SELECT 1 FROM order_payment_records WHERE order_id = ?)
+                """, Boolean.class, orderId, orderId, orderId, orderId);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    @Override
+    public void deleteStatusHistory(long orderId) {
+        jdbcTemplate.update("DELETE FROM order_status_history WHERE order_id = ?", orderId);
+    }
+
+    @Override
+    public void deleteItems(long orderId) {
+        jdbcTemplate.update("DELETE FROM order_items WHERE order_id = ?", orderId);
+    }
+
+    @Override
+    public int deletePending(long orderId) {
+        return jdbcTemplate.update("DELETE FROM orders WHERE id = ? AND status = 'PENDING'", orderId);
     }
 
     @Override

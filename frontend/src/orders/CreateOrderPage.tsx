@@ -65,7 +65,7 @@ export function CreateOrderPage() {
     try {
       const [customerOptions, catalogProducts] = await Promise.all([
         getOrderCustomers(undefined, signal),
-        getCatalogProducts({ availability: "AVAILABLE" }, signal),
+        getCatalogProducts({}, signal),
       ]);
       if (!signal?.aborted) {
         setCustomers(customerOptions);

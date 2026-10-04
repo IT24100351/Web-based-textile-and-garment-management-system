@@ -248,8 +248,8 @@ class OrderBillingApiIntegrationTests {
         jdbcTemplate.update("INSERT INTO garment_product_variants (id, product_id, size, color, price, status) VALUES (6301, 6201, 'M', 'White', 2490.00, 'AVAILABLE')");
         jdbcTemplate.update("INSERT INTO garment_product_variants (id, product_id, size, color, price, status) VALUES (6302, 6201, 'L', 'Navy', 2690.00, 'AVAILABLE')");
         jdbcTemplate.update("INSERT INTO orders (id, customer_id, order_number, status) VALUES (6501, 6101, 'ORD-BILLING-6501', ?)", status);
-        jdbcTemplate.update("INSERT INTO order_items (id, order_id, product_id, variant_id, quantity, selected_size, selected_color, unit_price_snapshot) VALUES (6601, 6501, 6201, 6301, 2, 'M', 'White', 2490.00)");
-        jdbcTemplate.update("INSERT INTO order_items (id, order_id, product_id, variant_id, quantity, selected_size, selected_color, unit_price_snapshot) VALUES (6602, 6501, 6201, 6302, 1, 'L', 'Navy', 2690.00)");
+        jdbcTemplate.update("INSERT INTO order_items (id, order_id, product_id, variant_id, product_name_snapshot, product_image_url_snapshot, quantity, selected_size, selected_color, unit_price_snapshot) VALUES (6601, 6501, 6201, 6301, 'Billing Shirt', NULL, 2, 'M', 'White', 2490.00)");
+        jdbcTemplate.update("INSERT INTO order_items (id, order_id, product_id, variant_id, product_name_snapshot, product_image_url_snapshot, quantity, selected_size, selected_color, unit_price_snapshot) VALUES (6602, 6501, 6201, 6302, 'Billing Shirt', NULL, 1, 'L', 'Navy', 2690.00)");
     }
 
     private void cleanup() {

@@ -7,6 +7,7 @@ public record OrderDetailItem(
         long productId,
         long variantId,
         String productName,
+        String productImageUrl,
         int quantity,
         String selectedSize,
         String selectedColor,

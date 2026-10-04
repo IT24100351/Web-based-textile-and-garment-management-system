@@ -3,6 +3,7 @@ package lk.ac.sliit.tgms.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,6 +56,8 @@ class OrderApiIntegrationTests {
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM production_tasks WHERE order_id BETWEEN 4501 AND 4505");
+        jdbcTemplate.update("DELETE FROM deliveries WHERE order_id BETWEEN 4501 AND 4505");
         jdbcTemplate.update("DELETE FROM order_payment_records");
         jdbcTemplate.update("DELETE FROM order_invoices");
         jdbcTemplate.update("DELETE FROM order_status_history");
@@ -64,6 +67,57 @@ class OrderApiIntegrationTests {
         jdbcTemplate.update("DELETE FROM garment_products");
         jdbcTemplate.update("DELETE FROM garment_categories");
         jdbcTemplate.update("DELETE FROM users WHERE id BETWEEN 4101 AND 4104 OR id BETWEEN 4998 AND 4999");
+    }
+
+    @Test
+    void salesOfficerDeletesOnlyPendingOrderWithoutDownstreamHistory() throws Exception {
+        insertUser(4101, "delete-customer@example.com", "Delete Customer", UserRole.CUSTOMER, true);
+        insertCategoryProductAndVariants();
+        insertOrder(4501, 4101, "ORD-DELETE-DRAFT", "PENDING");
+        insertOrderItem(4601, 4501, 4301, 2, "M", "White", "2490.00");
+
+        mockMvc.perform(delete("/api/orders/4501").cookie(sessionFor(UserRole.CUSTOMER)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/orders/4501").cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/orders/4501").cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isNotFound());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_items WHERE order_id = 4501", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void orderDeleteRejectsConfirmedAndEveryDownstreamReference() throws Exception {
+        insertUser(4101, "delete-customer@example.com", "Delete Customer", UserRole.CUSTOMER, true);
+        insertUser(4102, "delete-sales@example.com", "Delete Sales", UserRole.SALES_OFFICER, true);
+        Cookie sales = sessionFor(UserRole.SALES_OFFICER);
+        for (long id = 4501; id <= 4505; id++) {
+            insertOrder(id, 4101, "ORD-DELETE-" + id, id == 4501 ? "CONFIRMED" : "PENDING");
+        }
+        jdbcTemplate.update("INSERT INTO production_tasks (id, task_number, order_id) VALUES (4701, 'PRD-DELETE-4701', 4502)");
+        jdbcTemplate.update("""
+                INSERT INTO deliveries (id, delivery_number, order_id, active_order_lock_id, scheduled_at, delivery_address)
+                VALUES (4801, 'DLV-DELETE-4801', 4503, 4503, CURRENT_TIMESTAMP(6), 'Test address')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO order_invoices (id, order_id, invoice_number, total_amount, issued_by_user_id)
+                VALUES (4901, 4504, 'INV-DELETE-4901', 2490.00, 4102)
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO order_invoices (id, order_id, invoice_number, total_amount, issued_by_user_id)
+                VALUES (4902, 4505, 'INV-DELETE-4902', 2490.00, 4102)
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO order_payment_records (order_id, invoice_id, payment_status, amount_paid, recorded_by_user_id)
+                VALUES (4505, 4902, 'UNPAID', 0.00, 4102)
+                """);
+        for (long id = 4501; id <= 4505; id++) {
+            mockMvc.perform(delete("/api/orders/{id}", id).cookie(sales))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("ORDER_IN_USE"));
+            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders WHERE id = ?", Integer.class, id))
+                    .isEqualTo(1);
+        }
     }
 
     @Test
@@ -139,6 +193,20 @@ class OrderApiIntegrationTests {
                         orderId,
                         4301))
                 .isEqualTo("White");
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT product_name_snapshot FROM order_items WHERE order_id = ? AND variant_id = ?",
+                        String.class,
+                        orderId,
+                        4301))
+                .isEqualTo("Classic Oxford Shirt");
+
+        jdbcTemplate.update(
+                "UPDATE garment_products SET name = 'Renamed catalog product', image_url = '/products/renamed.jpg' WHERE id = 4201");
+        mockMvc.perform(get("/api/orders/{orderId}", orderId)
+                        .cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].productName").value("Classic Oxford Shirt"))
+                .andExpect(jsonPath("$.items[0].productImageUrl").value("/products/oxford-shirt.jpg"));
     }
 
     @Test
@@ -481,6 +549,25 @@ class OrderApiIntegrationTests {
                 .andExpect(jsonPath("$.items[0].lineTotal").value("4980.00"))
                 .andExpect(jsonPath("$.items[1].lineTotal").value("2690.00"))
                 .andExpect(jsonPath("$.totalAmount").value("7670.00"));
+    }
+
+    @Test
+    void orderPreviewNameAndImageComeFromTheSameFirstOrderItem() throws Exception {
+        insertUser(4101, "preview@example.com", "Preview Customer", UserRole.CUSTOMER, true);
+        insertCategoryProductAndVariants();
+        insertOrder(4501, 4101, "ORD-PREVIEW-PAIR", "PENDING");
+        insertOrderItemSnapshot(
+                4601, 4501, 4301, "Zulu First Product", "/products/a-first.jpg",
+                1, "M", "White", "2490.00");
+        insertOrderItemSnapshot(
+                4602, 4501, 4302, "Alpha Second Product", "/products/z-second.jpg",
+                1, "L", "Navy", "2690.00");
+
+        mockMvc.perform(get("/api/orders")
+                        .cookie(sessionFor(UserRole.SALES_OFFICER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].previewProductName").value("Zulu First Product"))
+                .andExpect(jsonPath("$[0].previewProductImageUrl").value("/products/a-first.jpg"));
     }
 
     @Test
@@ -851,17 +938,42 @@ class OrderApiIntegrationTests {
             String size,
             String color,
             String price) {
+        insertOrderItemSnapshot(
+                id,
+                orderId,
+                variantId,
+                "Classic Oxford Shirt",
+                "/products/oxford-shirt.jpg",
+                quantity,
+                size,
+                color,
+                price);
+    }
+
+    private void insertOrderItemSnapshot(
+            long id,
+            long orderId,
+            long variantId,
+            String productName,
+            String productImageUrl,
+            int quantity,
+            String size,
+            String color,
+            String price) {
         jdbcTemplate.update(
                 """
                 INSERT INTO order_items (
-                    id, order_id, product_id, variant_id, quantity,
+                    id, order_id, product_id, variant_id, product_name_snapshot,
+                    product_image_url_snapshot, quantity,
                     selected_size, selected_color, unit_price_snapshot
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id,
                 orderId,
                 4201,
                 variantId,
+                productName,
+                productImageUrl,
                 quantity,
                 size,
                 color,
@@ -875,10 +987,11 @@ class OrderApiIntegrationTests {
                 "Formal Wear",
                 "ACTIVE");
         jdbcTemplate.update(
-                "INSERT INTO garment_products (id, category_id, name, status) VALUES (?, ?, ?, ?)",
+                "INSERT INTO garment_products (id, category_id, name, image_url, status) VALUES (?, ?, ?, ?, ?)",
                 4201,
                 4401,
                 "Classic Oxford Shirt",
+                "/products/oxford-shirt.jpg",
                 "ACTIVE");
         insertVariant(4301, "M", "White", "2490.00", "AVAILABLE");
         insertVariant(4302, "L", "Navy", "2690.00", "AVAILABLE");

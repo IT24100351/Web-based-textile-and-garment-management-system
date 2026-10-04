@@ -25,7 +25,7 @@ export function ProductImage({
         className={`textile-grid grid place-items-center bg-gradient-to-br from-primary-soft via-surface-muted to-accent-soft font-black text-primary ${className}`}
         role="img"
       >
-        <span className="grid h-24 w-24 place-items-center rounded-[1.75rem] border border-primary/20 bg-surface/80 text-3xl shadow-lg">
+        <span className="grid aspect-square h-1/2 min-h-10 max-h-24 place-items-center rounded-xl border border-primary/20 bg-surface/80 text-base shadow-lg sm:text-3xl">
           {productName.slice(0, 2).toUpperCase()}
         </span>
       </div>

@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
-  archiveMaterialSupply,
+  deleteMaterialSupply,
   getMaterialSupply,
   getMaterialSupplyApiError,
   updateMaterialSupply,
@@ -10,6 +10,7 @@ import {
   type UpdateMaterialSupplyInput,
 } from "../api/materialSupplies";
 import { EmptyState, ErrorState, LoadingState } from "../components/AppStates";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import {
   materialSupplyListPagePath,
   parseMaterialSupplyPageId,
@@ -30,6 +31,7 @@ function formFromSupply(supply: MaterialSupply): UpdateMaterialSupplyInput {
     unitPrice: supply.unitPrice,
     deliveryLeadTimeDays: String(supply.deliveryLeadTimeDays),
     deliveryNotes: supply.deliveryNotes ?? "",
+    status: supply.status,
   };
 }
 
@@ -60,50 +62,8 @@ function SupplyNotFoundState() {
   );
 }
 
-function ArchivedSupplyState({
-  supply,
-  message,
-}: {
-  supply: MaterialSupply;
-  message: string | null;
-}) {
-  return (
-    <section className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
-      <div className="mx-auto max-w-4xl rounded-3xl border border-warning-border bg-warning-soft p-7 sm:p-10">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-warning">
-          Supply lifecycle
-        </p>
-        <h1 className="mt-3 text-3xl font-bold text-foreground">Material supply archived</h1>
-        <p aria-live="polite" className="mt-3 leading-7 text-warning">
-          {message ?? "This material supply was previously archived."} Its stable ID and
-          complete record remain available for Inventory and historical references.
-        </p>
-        <dl className="mt-7 grid gap-4 rounded-2xl border border-warning-border bg-background/60 p-5 sm:grid-cols-3">
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-muted">Supply ID</dt>
-            <dd className="mt-1 font-semibold text-foreground">{supply.id}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-muted">Material</dt>
-            <dd className="mt-1 font-semibold text-foreground">{supply.materialName}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-muted">Status</dt>
-            <dd className="mt-1 font-semibold text-warning">Discontinued</dd>
-          </div>
-        </dl>
-        <Link
-          className="mt-7 inline-flex rounded-full border border-warning-border px-5 py-2.5 text-sm font-semibold text-warning transition hover:border-warning-border"
-          to={materialSupplyListPagePath}
-        >
-          Back to my supplies
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
+  const navigate = useNavigate();
   const [supply, setSupply] = useState<MaterialSupply | null>(null);
   const [form, setForm] = useState<UpdateMaterialSupplyInput | null>(null);
   const [fieldErrors, setFieldErrors] = useState<MaterialSupplyDetailFieldErrors>({});
@@ -113,10 +73,10 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
   const [isNotFound, setIsNotFound] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isConfirmingArchive, setIsConfirmingArchive] = useState(false);
-  const [isArchiving, setIsArchiving] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [navigateAfterDelete, setNavigateAfterDelete] = useState(false);
   const [requestVersion, setRequestVersion] = useState(0);
 
   useEffect(() => {
@@ -193,21 +153,24 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
     }
   }
 
-  async function confirmArchive() {
-    setArchiveError(null);
-    setIsArchiving(true);
+  async function confirmDelete() {
+    if (isDeleting) return;
+    setDeleteError(null);
+    setIsDeleting(true);
     try {
-      const result = await archiveMaterialSupply(supplyId);
-      setSupply(result.supply);
-      setArchiveMessage(result.message);
-      setIsConfirmingArchive(false);
+      await deleteMaterialSupply(supplyId);
+      setNavigateAfterDelete(true);
+      setIsConfirmingDelete(false);
     } catch (error: unknown) {
-      setArchiveError(getMaterialSupplyApiError(
+      const apiError = getMaterialSupplyApiError(
         error,
-        "The material supply could not be archived. Please try again.",
-      ).message);
+        "The material supply could not be deleted. Please try again.",
+      );
+      setDeleteError(apiError.status === 404
+        ? "Material supply no longer exists."
+        : apiError.message);
     } finally {
-      setIsArchiving(false);
+      setIsDeleting(false);
     }
   }
 
@@ -241,10 +204,6 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
       </div>
     );
   }
-  if (supply.status === "DISCONTINUED") {
-    return <ArchivedSupplyState message={archiveMessage} supply={supply} />;
-  }
-
   return (
     <section className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
       <div className="mx-auto max-w-4xl">
@@ -255,8 +214,8 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
           Edit material supply
         </h1>
         <p className="mt-3 leading-7 text-muted">
-          Update future quantity, unit price, and delivery information. Material identity,
-          ownership, unit, status, and stable ID remain unchanged.
+          Update future quantity, unit price, delivery information, and operational availability.
+          Material identity, ownership, unit, and stable ID remain unchanged.
         </p>
 
         <dl className="mt-6 grid gap-4 rounded-2xl border border-border bg-surface/60 p-5 sm:grid-cols-3">
@@ -320,6 +279,24 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
               />
               <FieldError id="edit-supply-days-error" message={fieldErrors.deliveryLeadTimeDays} />
             </label>
+            <label className="text-sm font-medium text-foreground" htmlFor="edit-supply-status">
+              Status
+              <select
+                aria-describedby={fieldErrors.status ? "edit-supply-status-error" : undefined}
+                aria-invalid={Boolean(fieldErrors.status)}
+                className={inputClassName}
+                id="edit-supply-status"
+                onChange={(event) => updateField(
+                  "status",
+                  event.target.value as UpdateMaterialSupplyInput["status"],
+                )}
+                value={form.status}
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+              <FieldError id="edit-supply-status-error" message={fieldErrors.status} />
+            </label>
             <label className="text-sm font-medium text-foreground sm:col-span-2" htmlFor="edit-supply-notes">
               Delivery notes (optional)
               <textarea
@@ -365,63 +342,44 @@ function EditMaterialSupplyContent({ supplyId }: { supplyId: number }) {
 
         <section className="mt-8 rounded-3xl border border-danger-border bg-danger-soft p-6 sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-danger">
-            Supply lifecycle
+            Permanent action
           </p>
-          <h2 className="mt-2 text-2xl font-bold text-foreground">Archive this supply</h2>
+          <h2 className="mt-2 text-2xl font-bold text-foreground">Delete material supply</h2>
           <p className="mt-3 max-w-2xl leading-7 text-foreground-muted">
-            Archiving removes this offer from active Inventory selection while retaining
-            its stable ID and full record for historical references.
+            Delete permanently removes an unused supply. Supplies already used by Inventory
+            records are protected and cannot be deleted.
           </p>
 
-          {isConfirmingArchive ? (
-            <div
-              aria-describedby="archive-supply-description"
-              aria-labelledby="archive-supply-title"
-              className="mt-6 rounded-2xl border border-danger-border bg-background/70 p-5"
-              role="alertdialog"
-            >
-              <h3 className="text-lg font-bold text-foreground" id="archive-supply-title">
-                Confirm supply archive
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-foreground-muted" id="archive-supply-description">
-                Confirm that {supply.materialName} should no longer be offered for active
-                Inventory decisions. No database record or stable ID will be deleted.
-              </p>
-              {archiveError ? (
-                <p className="mt-4 text-sm text-danger" role="alert">{archiveError}</p>
-              ) : null}
-              <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  className="rounded-xl bg-danger px-5 py-3 font-semibold text-foreground transition hover:bg-danger disabled:cursor-wait disabled:opacity-60"
-                  disabled={isArchiving}
-                  onClick={() => void confirmArchive()}
-                  type="button"
-                >
-                  {isArchiving ? "Archiving supply…" : "Confirm archive"}
-                </button>
-                <button
-                  className="rounded-xl border border-border px-5 py-3 font-semibold text-foreground transition hover:border-border disabled:opacity-60"
-                  disabled={isArchiving}
-                  onClick={() => {
-                    setIsConfirmingArchive(false);
-                    setArchiveError(null);
-                  }}
-                  type="button"
-                >
-                  Keep supply active
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              className="mt-6 rounded-xl border border-danger-border px-5 py-3 font-semibold text-danger transition hover:bg-danger-soft"
-              onClick={() => setIsConfirmingArchive(true)}
-              type="button"
-            >
-              Archive supply
-            </button>
-          )}
+          <button
+            className="mt-6 rounded-xl border border-danger-border px-5 py-3 font-semibold text-danger transition hover:bg-danger-soft"
+            onClick={() => {
+              setDeleteError(null);
+              setNavigateAfterDelete(false);
+              setIsConfirmingDelete(true);
+            }}
+            type="button"
+          >
+            Delete material supply
+          </button>
         </section>
+        <ConfirmDialog
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          description="Are you sure you want to delete this material supply?"
+          error={deleteError}
+          isBusy={isDeleting}
+          isOpen={isConfirmingDelete}
+          onAfterClose={() => {
+            if (navigateAfterDelete) navigate(materialSupplyListPagePath, { replace: true });
+          }}
+          onCancel={() => {
+            setNavigateAfterDelete(false);
+            setIsConfirmingDelete(false);
+            setDeleteError(null);
+          }}
+          onConfirm={() => void confirmDelete()}
+          title="Delete material supply?"
+        />
       </div>
     </section>
   );

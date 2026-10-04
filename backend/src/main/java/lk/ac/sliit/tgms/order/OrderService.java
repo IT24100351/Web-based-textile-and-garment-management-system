@@ -15,6 +15,7 @@ import lk.ac.sliit.tgms.order.OrderValidator.ValidatedOrder;
 import lk.ac.sliit.tgms.order.OrderValidator.ValidatedOrderItem;
 import lk.ac.sliit.tgms.product.OrderProductSelection;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -61,6 +62,25 @@ public class OrderService {
     public OrderDetail getStaffOrder(long orderId) {
         return orderRepository.findOrderDetail(requireOrderId(orderId), null)
                 .orElseThrow(OrderNotFoundException::new);
+    }
+
+    @Transactional
+    public void deletePendingOrder(long orderId) {
+        long id = requireOrderId(orderId);
+        OrderStatus status = orderRepository.findStatusForUpdate(id)
+                .orElseThrow(OrderNotFoundException::new);
+        if (status != OrderStatus.PENDING || orderRepository.hasDownstreamHistory(id)) {
+            throw new OrderInUseException();
+        }
+        try {
+            orderRepository.deleteStatusHistory(id);
+            orderRepository.deleteItems(id);
+            if (orderRepository.deletePending(id) != 1) {
+                throw new OrderInUseException();
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw new OrderInUseException();
+        }
     }
 
     @Transactional(readOnly = true)
@@ -303,6 +323,8 @@ public class OrderService {
                     order.id(),
                     selection.productId(),
                     selection.variantId(),
+                    selection.productName(),
+                    selection.productImageUrl(),
                     requested.quantity(),
                     selection.size(),
                     selection.color(),

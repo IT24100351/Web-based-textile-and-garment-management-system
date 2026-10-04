@@ -44,8 +44,11 @@ export function normalizeMaterialSupplyForm(
     materialCode: normalizeText(form.materialCode),
     materialName: normalizeText(form.materialName),
     materialDescription: normalizeText(form.materialDescription),
-    ...normalizeMaterialSupplyDetails(form),
+    quantity: form.quantity.trim(),
     unitOfMeasure: normalizeText(form.unitOfMeasure),
+    unitPrice: form.unitPrice.trim(),
+    deliveryLeadTimeDays: form.deliveryLeadTimeDays.trim(),
+    deliveryNotes: normalizeText(form.deliveryNotes),
   };
 }
 
@@ -57,6 +60,7 @@ export function normalizeMaterialSupplyDetails(
     unitPrice: form.unitPrice.trim(),
     deliveryLeadTimeDays: form.deliveryLeadTimeDays.trim(),
     deliveryNotes: normalizeText(form.deliveryNotes),
+    status: form.status,
   };
 }
 
@@ -65,7 +69,7 @@ export function validateMaterialSupplyForm(
 ): MaterialSupplyFieldErrors {
   const normalized = normalizeMaterialSupplyForm(form);
   const errors: MaterialSupplyFieldErrors = {
-    ...validateMaterialSupplyDetails(normalized),
+    ...validateMutableDetails(normalized),
   };
 
   for (const [field, label, maximumLength] of requiredTextFields) {
@@ -83,23 +87,41 @@ export function validateMaterialSupplyForm(
   return errors;
 }
 
+type MutableMaterialSupplyDetails = Pick<
+  UpdateMaterialSupplyInput,
+  "quantity" | "unitPrice" | "deliveryLeadTimeDays" | "deliveryNotes"
+>;
+type MutableMaterialSupplyDetailErrors = Partial<
+  Record<keyof MutableMaterialSupplyDetails, string>
+>;
+
+function validateMutableDetails(
+  form: MutableMaterialSupplyDetails,
+): MutableMaterialSupplyDetailErrors {
+  const errors: MutableMaterialSupplyDetailErrors = {};
+  if (!quantityPattern.test(form.quantity) || Number(form.quantity) <= 0) {
+    errors.quantity = "Quantity must be positive with at most 11 digits and 3 decimals.";
+  }
+  if (!pricePattern.test(form.unitPrice) || Number(form.unitPrice) <= 0) {
+    errors.unitPrice = "Unit price must be positive with at most 10 digits and 2 decimals.";
+  }
+  if (!nonNegativeIntegerPattern.test(form.deliveryLeadTimeDays)
+      || Number(form.deliveryLeadTimeDays) > 2_147_483_647) {
+    errors.deliveryLeadTimeDays = "Delivery lead time must be a non-negative whole number.";
+  }
+  if (form.deliveryNotes.length > 500) {
+    errors.deliveryNotes = "Delivery notes must not exceed 500 characters.";
+  }
+  return errors;
+}
+
 export function validateMaterialSupplyDetails(
   form: UpdateMaterialSupplyInput,
 ): MaterialSupplyDetailFieldErrors {
   const normalized = normalizeMaterialSupplyDetails(form);
-  const errors: MaterialSupplyDetailFieldErrors = {};
-  if (!quantityPattern.test(normalized.quantity) || Number(normalized.quantity) <= 0) {
-    errors.quantity = "Quantity must be positive with at most 11 digits and 3 decimals.";
-  }
-  if (!pricePattern.test(normalized.unitPrice) || Number(normalized.unitPrice) <= 0) {
-    errors.unitPrice = "Unit price must be positive with at most 10 digits and 2 decimals.";
-  }
-  if (!nonNegativeIntegerPattern.test(normalized.deliveryLeadTimeDays)
-      || Number(normalized.deliveryLeadTimeDays) > 2_147_483_647) {
-    errors.deliveryLeadTimeDays = "Delivery lead time must be a non-negative whole number.";
-  }
-  if (normalized.deliveryNotes.length > 500) {
-    errors.deliveryNotes = "Delivery notes must not exceed 500 characters.";
+  const errors = validateMutableDetails(normalized);
+  if (normalized.status !== "ACTIVE" && normalized.status !== "INACTIVE") {
+    errors.status = "Status must be Active or Inactive.";
   }
   return errors;
 }
