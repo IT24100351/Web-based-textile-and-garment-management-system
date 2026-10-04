@@ -15,7 +15,9 @@ public class InventoryInsufficientStockException extends RuntimeException {
         this.currentQuantity = currentQuantity;
     }
 
-    
+    public BigDecimal requestedQuantity() {
+        return requestedQuantity;
+    }
 
     public BigDecimal currentQuantity() {
         return currentQuantity;
