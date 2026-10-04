@@ -22,6 +22,8 @@ public class DeliveryStatusTransitionException extends RuntimeException {
         if (allowed.isEmpty()) {
             return "This delivery is in a terminal status and cannot be changed.";
         }
-        
+        return "Allowed next status: " + allowed.stream()
+                .map(DeliveryStatus::name)
+                .collect(Collectors.joining(" or ")) + ".";
     }
 }
