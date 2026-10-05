@@ -249,7 +249,12 @@ public class ProductService {
                 .orElseThrow(ProductNotFoundException::new);
     }
 
-   
+    @Transactional(readOnly = true)
+    public GarmentProductDetails getPublicCatalogProduct(long productId) {
+        validateProductId(productId);
+        return productRepository.findPublicCatalogProductById(productId)
+                .orElseThrow(ProductNotFoundException::new);
+    }
 
     @Transactional(readOnly = true)
     public List<GarmentProductDetails> getPublicCatalog() {
