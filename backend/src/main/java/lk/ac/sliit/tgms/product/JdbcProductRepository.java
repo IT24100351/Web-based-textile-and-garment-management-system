@@ -93,11 +93,7 @@ public class JdbcProductRepository implements ProductRepository {
     }
 
     @Override
-    public long createCategory(String categoryName) {
-        return insertAndReturnId(
-                "INSERT INTO garment_categories (name) VALUES (?)",
-                statement -> statement.setString(1, categoryName));
-    }
+   
 
     @Override
     public long createProduct(
