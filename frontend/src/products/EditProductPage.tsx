@@ -189,21 +189,7 @@ function EditProductContent({ productId }: { productId: number }) {
     setSuccessMessage(null);
   }
 
-  function selectVariant(variantId: number) {
-    if (!product) {
-      return;
-    }
-    // Reject stale or discontinued IDs in case the select value no longer matches editable data.
-    const variant = product.variants.find((candidate) => candidate.id === variantId);
-    if (!variant || variant.status === "DISCONTINUED") {
-      return;
-    }
-    setSelectedVariantId(variant.id);
-    setForm(formFromProduct(product, variant));
-    setFieldErrors({});
-    setSubmissionError(null);
-    setSuccessMessage(null);
-  }
+ 
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
