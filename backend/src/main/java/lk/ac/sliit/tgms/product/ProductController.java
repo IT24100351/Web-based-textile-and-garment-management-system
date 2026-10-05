@@ -123,15 +123,7 @@ public class ProductController {
                 "Garment product discontinued successfully.", ProductResponse.from(details));
     }
 
-    private long parseProductId(String productId) {
-        try {
-            return Long.parseLong(productId);
-        } catch (NumberFormatException exception) {
-            throw new ProductValidationException(
-                    Map.of("productId", "Product ID must be a positive number."));
-        }
-    }
-
+  
     public record CreateProductRequest(
             String name,
             String category,
