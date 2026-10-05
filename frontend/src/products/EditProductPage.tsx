@@ -44,7 +44,13 @@ function formFromProduct(
   };
 }
 
-
+function FieldError({ id, message }: { id: string; message?: string }) {
+  return message ? (
+    <span className="mt-2 block text-sm text-danger" id={id}>
+      {message}
+    </span>
+  ) : null;
+}
 
 function EditProductNotFoundState() {
   return (
