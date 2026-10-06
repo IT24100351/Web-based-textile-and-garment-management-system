@@ -12,6 +12,13 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 @Repository
+public class JdbcOrderRepository implements OrderRepository {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public JdbcOrderRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @Override
     public CustomerOrder createOrder(long customerId, String orderNumber, OrderStatus status) {
